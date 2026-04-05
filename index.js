@@ -5,29 +5,16 @@ const APP_ID = process.env.ONESIGNAL_APP_ID;
 const API_KEY = process.env.ONESIGNAL_REST_KEY;
 
 const server = http.createServer(async (req, res) => {
-    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-
+    // Cron-job için hızlı ve temiz yanıt başlığı
     if (req.url === '/vakitleri-kur') {
         try {
-            // --- 1. ADIM: GÜNLÜK TAZE VERİLER (AYET & HADİS) ---
+            // --- 1. ADIM: VERİLERİ ÇEK (Sessizce, Bildirim Gitmeden) ---
             const rastgeleAyetNo = Math.floor(Math.random() * 6236) + 1;
-            const ayetRes = await axios.get(`https://api.alquran.cloud/v1/ayah/${rastgeleAyetNo}/editions/tr.diyanet,en.asad`);
+            const ayetRes = await axios.get(`https://api.alquran.cloud/v1/ayah/${rastgeleAyetNo}/editions/tr.diyanet`);
             const ayetTr = ayetRes.data.data[0].text;
-            const ayetEn = ayetRes.data.data[1].text;
             const sureBilgi = `${ayetRes.data.data[0].surah.englishName} (${ayetRes.data.data[0].numberInSurah})`;
 
-            let hadisTr = "Hayra vesile olan, hayrı yapan gibidir.";
-            let hadisEn = "One who guides to something good has a reward similar to that of its doer.";
-            try {
-                const hRes = await axios.get(`https://hadis-api-id.vercel.app/hadith/bukhari?page=1&limit=20`);
-                if (hRes.data && hRes.data.items) {
-                    const rH = hRes.data.items[Math.floor(Math.random() * hRes.data.items.length)];
-                    hadisTr = rH.tr || hadisTr;
-                    hadisEn = rH.en || hadisEn;
-                }
-            } catch (e) { console.log("Yedek hadis kullanılıyor."); }
-
-            // --- 2. ADIM: TÜM KULLANICILARI ÇEK ---
+            // --- 2. ADIM: KULLANICILARI ÇEK ---
             const usersRes = await axios.get(`https://onesignal.com/api/v1/players?app_id=${APP_ID}`, {
                 headers: { 'Authorization': `Basic ${API_KEY}` }
             });
@@ -37,42 +24,28 @@ const server = http.createServer(async (req, res) => {
                 const lat = user.tags?.lat;
                 const lon = user.tags?.lon;
                 const playerId = user.id;
-                const ezanAcikMi = user.tags?.imsak_vakti !== "false"; // Senin "Tek Tik" ayarın
+                const ezanAcikMi = user.tags?.imsak_vakti !== "false";
 
-                // --- 3. ADIM: AYET & HADİS BİLDİRİMİ (HERKESE - SABİT SAAT) ---
-                // Ezan ayarı ne olursa olsun, her sabah 09:00'da gider.
-                await axios.post('https://onesignal.com/api/v1/notifications', {
-                    app_id: APP_ID,
-                    include_player_ids: [playerId],
-                    headings: { "tr": "Günün Ayet ve Hadisi", "en": "Verse & Hadith of the Day" },
-                    contents: { 
-                        "tr": `📖 Ayet: ${ayetTr} (${sureBilgi})\n💬 Hadis: ${hadisTr}`,
-                        "en": `📖 Verse: ${ayetEn} (${sureBilgi})\n💬 Hadith: ${hadisEn}`
-                    },
-                    send_after: tarihBelirle("09:00") // Sabah 9'a kurduk
-                }, {
-                    headers: { 'Authorization': `Basic ${API_KEY}`, 'Content-Type': 'application/json' }
-                });
-
-                // --- 4. ADIM: EZAN BİLDİRİMLERİ (SADECE AÇIK OLANLARA) ---
+                // --- 3. ADIM: SADECE EZAN BİLDİRİMLERİ (Türkçe ve Tek Satır) ---
                 if (lat && lon && ezanAcikMi) {
                     const vRes = await axios.get(`http://api.aladhan.com/v1/timingsByAddress?address=${lat},${lon}&method=13`);
                     const v = vRes.data.data.timings;
 
                     const vakitler = [
-                        { tr: "İmsak", en: "Fajr", saat: v.Fajr },
-                        { tr: "Öğle", en: "Dhuhr", saat: v.Dhuhr },
-                        { tr: "İkindi", en: "Asr", saat: v.Asr },
-                        { tr: "Akşam", en: "Maghrib", saat: v.Maghrib },
-                        { tr: "Yatsı", en: "Isha", saat: v.Isha }
+                        { isim: "İmsak", saat: v.Fajr },
+                        { isim: "Öğle", saat: v.Dhuhr },
+                        { isim: "İkindi", saat: v.Asr },
+                        { isim: "Akşam", saat: v.Maghrib },
+                        { isim: "Yatsı", saat: v.Isha }
                     ];
 
                     for (let vkt of vakitler) {
                         await axios.post('https://onesignal.com/api/v1/notifications', {
                             app_id: APP_ID,
                             include_player_ids: [playerId],
-                            headings: { "tr": `Ezan: ${vkt.tr}`, "en": `Adhan: ${vkt.en}` },
-                            contents: { "tr": `${vkt.tr} vakti girdi.`, "en": `It is time for ${vkt.en}.` },
+                            // OneSignal'ı kandırıyoruz: "en" içine Türkçe yazarak çift bildirimi engelliyoruz
+                            headings: { "en": `Ezan: ${vkt.isim}` },
+                            contents: { "en": `${vkt.isim} vakti girdi.` },
                             send_after: tarihBelirle(vkt.saat)
                         }, {
                             headers: { 'Authorization': `Basic ${API_KEY}`, 'Content-Type': 'application/json' }
@@ -80,11 +53,17 @@ const server = http.createServer(async (req, res) => {
                     }
                 }
             }
-            res.end(`<h1>✅ BAŞARILI</h1><p>Ayet/Hadis (09:00) ve Ezan vakitleri planlandı.</p>`);
+            // --- 4. ADIM: CRON-JOB DOSTU KISA CEVAP ---
+            res.writeHead(200, { 'Content-Type': 'text/plain' });
+            res.end("OK"); // Bu satır Cron-job hatasını bitirir.
+
         } catch (err) {
-            res.end(`<h1>❌ HATA:</h1><p>${err.message}</p>`);
+            console.error("Hata oluştu:", err.message);
+            res.writeHead(500);
+            res.end("Hata");
         }
     } else {
+        res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
         res.end("<h1>Cihan Yazılım Rehber Bot Aktif</h1>");
     }
 });
