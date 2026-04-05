@@ -5,68 +5,58 @@ const APP_ID = process.env.ONESIGNAL_APP_ID;
 const API_KEY = process.env.ONESIGNAL_REST_KEY;
 
 const server = http.createServer(async (req, res) => {
-    // 1. SENİN ÇALIŞAN TEST KODUN (Hemen gönderir)
+    // 1. Sizin çalışan kodunuzdaki link (Hemen gönderir)
     if (req.url === '/test-gonder') {
-        console.log("--- 🚨 TEST TETİKLENDİ ---");
-        const sonuc = await kanitMesajiGonder(null); // null = anında
-        
+        const sonuc = await kanitMesajiGonder(false); // Zaman yok
         res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-        res.end(sonuc ? "<h1>✅ TELEFONA ANINDA GİTTİ!</h1>" : "<h1>❌ HATA!</h1>");
+        res.end(sonuc ? "<h1>✅ TELEFONA GİTTİ!</h1>" : "<h1>❌ HATA!</h1>");
     } 
-    // 2. SABAHTAN BERİ İSTEDİĞİMİZ PANEL PLANI (17:30'da gönderir)
+    // 2. Panelde görünmesini sağlayacak link (17:30 planı)
     else if (req.url === '/plana-ekle') {
-        console.log("--- 📅 PANEL PLANI TETİKLENDİ ---");
-        const sonuc = await kanitMesajiGonder("2026-04-05 17:30:00 GMT+0300");
-        
+        const sonuc = await kanitMesajiGonder(true); // Zaman var
         res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-        res.end(sonuc ? "<h1>✅ PANELDE 17:30 İÇİN PLANLANDI!</h1>" : "<h1>❌ HATA!</h1>");
+        res.end(sonuc ? "<h1>✅ PANELDE PLANLANDI!</h1>" : "<h1>❌ HATA!</h1>");
     } 
     else {
         res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-        res.end("<h1>Bot Aktif</h1><p>/test-gonder (Anında) | /plana-ekle (Panelde Görünür)</p>");
+        res.end("<h1>Bot Hazır</h1>");
     }
 });
 
-async function kanitMesajiGonder(zaman) {
+async function kanitMesajiGonder(planliMi) {
     try {
-        const body = {
+        // Sizin çalışan kodunuzdaki gövde (body) yapısı:
+        const gonderilecekVeri = {
             app_id: APP_ID,
-            headings: { "tr": zaman ? "SAAT 17:30 PLANI" : "BAĞLANTI KANITI" },
-            contents: { "tr": zaman ? "Bu mesajı panelde görmelisin!" : "Render üzerinden gelen onaydır!" },
+            headings: { "tr": planliMi ? "SAAT 17:30 PLANI" : "BAĞLANTI KANITI" },
+            contents: { "tr": planliMi ? "Paneldeki liste doldu!" : "Render üzerinden gelen onaydır!" },
             included_segments: ["Total Subscriptions"],
             isAnyWeb: true,
             isAndroid: true,
             isIos: true
         };
 
-        // Eğer zaman varsa, OneSignal'a "beklet" diyoruz (Panelde görünmesini sağlayan satır)
-        if (zaman) {
-            body.send_after = zaman;
+        // Eğer planlı istiyorsak bu satırı ekliyoruz (Panelde görünmesini sağlayan bu)
+        if (planliMi) {
+            gonderilecekVeri.send_after = "2026-04-05 17:30:00 GMT+0300";
         }
 
-        const response = await axios.post('https://onesignal.com/api/v1/notifications', body, {
+        const response = await axios.post('https://onesignal.com/api/v1/notifications', gonderilecekVeri, {
             headers: { 
                 'Authorization': `Basic ${API_KEY}`,
                 'Content-Type': 'application/json' 
             }
         });
 
-        if (response.data && response.data.id) {
-            console.log("🚀 BAŞARILI. ID:", response.data.id);
-            return true;
-        }
-        return false;
+        return !!(response.data && response.data.id);
     } catch (e) {
-        if (e.response) {
-            console.error("❌ ONESIGNAL HATASI:", JSON.stringify(e.response.data));
-        } else {
-            console.error("❌ SİSTEMSEL HATA:", e.message);
-        }
+        // Hata varsa Render siyah ekranda (Logs) ne olduğunu yazacak
+        console.error("❌ ONESIGNAL HATASI:", e.response ? JSON.stringify(e.response.data) : e.message);
         return false;
     }
 }
 
 const PORT = process.env.PORT || 10000;
 server.listen(PORT, () => {
-    console.log(`==> Bot ${PORT} portunda hazır.`);
+    console.log(`==> Sistem ${PORT} portunda hazır.`);
 });
