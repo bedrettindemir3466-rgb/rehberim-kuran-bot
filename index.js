@@ -5,19 +5,20 @@ const http = require('http');
 const APP_ID = process.env.ONESIGNAL_APP_ID;
 const API_KEY = process.env.ONESIGNAL_REST_KEY;
 
+// Render'ı ayakta tutan mini server
 http.createServer((req, res) => {
     res.writeHead(200, { 'Content-Type': 'text/plain' });
-    res.end('Rehberim Kuran Bot Calisiyor\n');
+    res.end('Rehberim Kuran Bot Yayinda!\n');
 }).listen(process.env.PORT || 3000);
 
 async function startEzanRobot() {
-    console.log("--- Test ve Planlama Başlatıldı ---");
+    console.log("--- 🚀 Robot Goreve Basladi ---");
     try {
-        // 1. ÖZEL TEST BİLDİRİMİ (Saat 13:50 için)
-        // Not: Eğer saat 13:50'yi geçtiyse burayı 1-2 dakika sonrasına ayarlayın.
-        await sendToOneSignal("TEST BİLDİRİMİ", "Cihan Bey, test başarılı! Saat tam 13:50.", "13:50");
+        // 1. TEST BİLDİRİMİ (Saat 13:55 için)
+        await sendToOneSignal("TEST MESAJI", "Cihan Bey, robotumuz calisiyor! ✅", "13:55");
 
         // 2. VAKİTLERİ ÇEK (Aladhan API)
+        console.log("📡 Vakitler kontrol ediliyor...");
         const res = await axios.get('http://api.aladhan.com/v1/timingsByAddress?address=Buyukcekmece,Istanbul,Turkey&method=13');
         const t = res.data.data.timings;
         
@@ -30,14 +31,14 @@ async function startEzanRobot() {
         ];
 
         for (let v of vakitler) {
-            await sendToOneSignal(`${v.ad} Ezanı`, `${v.ad} Ezanı Okunuyor...`, v.saat);
+            await sendToOneSignal(v.ad, `${v.ad} Ezanı Okunuyor...`, v.saat);
             const onbesDk = dakikaHesapla(v.saat, -15);
-            await sendToOneSignal(`${v.ad} Uyarı`, `${v.ad} ezanına 15 dakika kaldı.`, onbesDk);
+            await sendToOneSignal(`${v.ad} Uyari`, `${v.ad} ezanina 15 dakika kaldi.`, onbesDk);
         }
 
-        console.log("--- TÜM İŞLEMLER BİTTİ, LOGLARI KONTROL EDİN ---");
+        console.log("--- ✅ Tum Islemler Tamamlandi ---");
     } catch (error) {
-        console.error("ANA HATA:", error.message);
+        console.error("❌ Kritik Hata:", error.message);
     }
 }
 
@@ -51,14 +52,14 @@ function dakikaHesapla(saatStr, fark) {
 async function sendToOneSignal(baslik, mesaj, zaman) {
     try {
         const bugun = new Date().toISOString().split('T')[0];
-        const planlananZaman = `${bugun} ${zaman}:00 GMT+0300`;
+        const planZaman = `${bugun} ${zaman}:00 GMT+0300`;
 
         const response = await axios.post('https://onesignal.com/api/v1/notifications', {
             app_id: APP_ID,
-            headings: { "tr": baslik },
-            contents: { "tr": mesaj },
+            headings: { "en": baslik, "tr": baslik },
+            contents: { "en": mesaj, "tr": mesaj },
             included_segments: ["Subscribed Users"],
-            send_after: planlananZaman
+            send_after: planZaman
         }, {
             headers: { 
                 'Authorization': `Basic ${API_KEY}`,
@@ -67,11 +68,11 @@ async function sendToOneSignal(baslik, mesaj, zaman) {
         });
         
         if (response.data.id) {
-            console.log(`✅ BAŞARILI: ${baslik} (${zaman}) planlandı.`);
+            console.log(`✅ Basarili: ${baslik} (${zaman})`);
         }
     } catch (e) {
-        const detay = e.response ? JSON.stringify(e.response.data) : e.message;
-        console.log(`❌ REDDEDİLDİ (${baslik} - ${zaman}): ${detay}`);
+        const hata = e.response ? JSON.stringify(e.response.data) : e.message;
+        console.log(`❌ Hata (${baslik} - ${zaman}): ${hata}`);
     }
 }
 
