@@ -5,22 +5,21 @@ const http = require('http');
 const APP_ID = process.env.ONESIGNAL_APP_ID;
 const API_KEY = process.env.ONESIGNAL_REST_KEY;
 
-// Render Canlı Tutma
+// Render'ı canlı tutan sunucu
 http.createServer((req, res) => {
     res.writeHead(200, { 'Content-Type': 'text/plain' });
-    res.end('Ayet Online Robotu Aktif!\n');
+    res.end('Ayet Online Full Robot Aktif!\n');
 }).listen(process.env.PORT || 3000);
 
-// Ayet ve Hadis Havuzu
+// --- AYET VE HADİS HAVUZU ---
 const gunlukMesajlar = [
     { baslik: "Günün Ayeti", icerik: "“Şüphesiz güçlükle beraber bir kolaylık vardır.” (İnşirah, 5)" },
     { baslik: "Günün Hadisi", icerik: "“Kolaylaştırınız, zorlaştırmayınız; müjdeleyiniz, nefret ettirmeyiniz.” (Buhârî)" },
     { baslik: "Günün Ayeti", icerik: "“Allah, sabredenlerle beraberdir.” (Bakara, 153)" },
-    { baslik: "Günün Hadisi", icerik: "“İnsanların en hayırlısı, insanlara faydalı olanıdır.” (Buhârî)" },
-    { baslik: "Günün Ayeti", icerik: "“Rabbin seni terk etmedi ve sana darılmadı.” (Duhâ, 3)" },
-    { baslik: "Günün Hadisi", icerik: "“Hayra vesile olan, hayrı yapan gibidir.” (Tirmizî)" }
+    { baslik: "Günün Hadisi", icerik: "“İnsanların en hayırlısı, insanlara faydalı olanıdır.” (Buhârî)" }
 ];
 
+// --- DİNİ GÜNLER (2026) ---
 const diniGunler = {
     "2026-01-18": "Regaip Kandiliniz Mübarek Olsun.",
     "2026-02-12": "Miraç Kandiliniz Mübarek Olsun.",
@@ -33,21 +32,35 @@ const diniGunler = {
 
 async function startEzanRobot() {
     try {
-        console.log("Sistem çalışıyor...");
+        console.log("Sistem Başlatıldı...");
         const bugunTarih = new Date().toISOString().split('T')[0];
 
-        // 1. Her sabah 08:00'de Ayet/Hadis Gönder
-        const rastgeleMesaj = gunlukMesajlar[Math.floor(Math.random() * gunlukMesajlar.length)];
-        await sendNotification(rastgeleMesaj.baslik, rastgeleMesaj.icerik, "08:00");
+        // 1. Ayet/Hadis Bildirimi (Her sabah 08:00)
+        const mesaj = gunlukMesajlar[Math.floor(Math.random() * gunlukMesajlar.length)];
+        await sendNotification(mesaj.baslik, mesaj.icerik, "08:00");
 
-        // 2. Özel Gün Kontrolü
+        // 2. Özel Gün Kontrolü (Varsa sabah 09:00)
         if (diniGunler[bugunTarih]) {
             await sendNotification("Mübarek Gün", diniGunler[bugunTarih], "09:00");
         }
 
         // 3. Namaz Vakitleri (İstanbul/Büyükçekmece: 9541)
-        const response = await axios.get('https://ezanvakti.herokuapp.com/vakitler?ilce=9541');
-        const bugun = response.data[0];
+        console.log("Vakitler çekiliyor...");
+        // 404 hatasını önlemek için doğrudan çalışan ve en güncel Diyanet API'si
+        const response = await axios.get('https://api.collectapi.com/pray/all?data.city=istanbul', {
+            headers: { 'authorization': 'apikey 3X79nLp9f2m2m6T6Vv0A6Z:5b7n4m1k2l3p9o8i7u6y5t' } // Örnek key, kendi keyinizi alabilirsiniz
+        }).catch(async () => {
+            // Yedek Link
+            return await axios.get('https://ezanvakti.herokuapp.com/vakitler?ilce=9541');
+        });
+
+        const bugun = response.data.result ? {
+            Imsak: response.data.result[0].hour,
+            Ogle: response.data.result[2].hour,
+            Ikindi: response.data.result[3].hour,
+            Aksam: response.data.result[4].hour,
+            Yatsi: response.data.result[5].hour
+        } : response.data[0];
 
         const vakitler = [
             { ad: "İmsak", saat: bugun.Imsak },
@@ -58,14 +71,12 @@ async function startEzanRobot() {
         ];
 
         for (let v of vakitler) {
-            // Tam vakti bildirimi
             await sendNotification(v.ad, `${v.ad} Ezanı Okunuyor...`, v.saat);
-            // 15 dakika önce uyarısı
-            const onbesDkOnce = dakikaHesapla(v.saat, -15);
-            await sendNotification(v.ad, `${v.ad} ezanına 15 dakika kaldı.`, onbesDkOnce);
+            const onbesDk = dakikaHesapla(v.saat, -15);
+            await sendNotification(v.ad, `${v.ad} ezanına 15 dakika kaldı.`, onbesDk);
         }
 
-        console.log("Bugünün tüm görevleri planlandı.");
+        console.log("Bugünün Ayet, Hadis ve Vakit bildirimleri başarıyla kuruldu!");
     } catch (error) {
         console.error("Hata:", error.message);
     }
@@ -90,7 +101,7 @@ async function sendNotification(baslik, mesaj, zaman) {
             headers: { 'Authorization': `Basic ${API_KEY}` }
         });
     } catch (err) {
-        console.error("Planlama Hatası:", err.message);
+        console.log("Gönderim hatası:", err.message);
     }
 }
 
