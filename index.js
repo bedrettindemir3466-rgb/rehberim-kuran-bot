@@ -5,19 +5,18 @@ const http = require('http');
 const APP_ID = process.env.ONESIGNAL_APP_ID;
 const API_KEY = process.env.ONESIGNAL_REST_KEY;
 
-// Render'ı ayakta tutan mini server
 http.createServer((req, res) => {
     res.writeHead(200, { 'Content-Type': 'text/plain' });
-    res.end('Rehberim Kuran Bot Yayinda!\n');
+    res.end('Ayet Online Aktif!\n');
 }).listen(process.env.PORT || 3000);
 
 async function startEzanRobot() {
-    console.log("--- 🚀 Robot Goreve Basladi ---");
+    console.log("--- 🚀 Robot Calismaya Basladi ---");
     try {
-        // 1. TEST BİLDİRİMİ (Saat 13:55 için)
-        await sendToOneSignal("TEST MESAJI", "Cihan Bey, robotumuz calisiyor! ✅", "13:55");
+        // 1. TEST BİLDİRİMİ (Saat 14:00 için)
+        await sendToOneSignal("TEST", "Cihan Bey, sistem artik %100 hazir! ✅", "14:00");
 
-        // 2. VAKİTLERİ ÇEK (Aladhan API)
+        // 2. VAKİTLERİ ÇEK
         console.log("📡 Vakitler kontrol ediliyor...");
         const res = await axios.get('http://api.aladhan.com/v1/timingsByAddress?address=Buyukcekmece,Istanbul,Turkey&method=13');
         const t = res.data.data.timings;
@@ -31,22 +30,15 @@ async function startEzanRobot() {
         ];
 
         for (let v of vakitler) {
-            await sendToOneSignal(v.ad, `${v.ad} Ezanı Okunuyor...`, v.saat);
-            const onbesDk = dakikaHesapla(v.saat, -15);
-            await sendToOneSignal(`${v.ad} Uyari`, `${v.ad} ezanina 15 dakika kaldi.`, onbesDk);
+            await sendToOneSignal(v.ad, `${v.ad} Ezani Okunuyor...`, v.saat);
+            // Her gönderimden sonra 2 saniye bekle (Bağlantı kopmasın)
+            await new Promise(resolve => setTimeout(resolve, 2000));
         }
 
         console.log("--- ✅ Tum Islemler Tamamlandi ---");
     } catch (error) {
-        console.error("❌ Kritik Hata:", error.message);
+        console.error("❌ Hata:", error.message);
     }
-}
-
-function dakikaHesapla(saatStr, fark) {
-    let [h, m] = saatStr.split(':').map(Number);
-    let date = new Date();
-    date.setHours(h, m + fark, 0);
-    return `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
 }
 
 async function sendToOneSignal(baslik, mesaj, zaman) {
@@ -56,8 +48,8 @@ async function sendToOneSignal(baslik, mesaj, zaman) {
 
         const response = await axios.post('https://onesignal.com/api/v1/notifications', {
             app_id: APP_ID,
-            headings: { "en": baslik, "tr": baslik },
-            contents: { "en": mesaj, "tr": mesaj },
+            headings: { "tr": baslik },
+            contents: { "tr": mesaj },
             included_segments: ["Subscribed Users"],
             send_after: planZaman
         }, {
@@ -71,8 +63,8 @@ async function sendToOneSignal(baslik, mesaj, zaman) {
             console.log(`✅ Basarili: ${baslik} (${zaman})`);
         }
     } catch (e) {
-        const hata = e.response ? JSON.stringify(e.response.data) : e.message;
-        console.log(`❌ Hata (${baslik} - ${zaman}): ${hata}`);
+        const detay = e.response ? JSON.stringify(e.response.data) : e.message;
+        console.log(`❌ Reddedildi (${baslik}): ${detay}`);
     }
 }
 
