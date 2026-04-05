@@ -25,7 +25,8 @@ const server = http.createServer(async (req, res) => {
 async function planliMesajGonder() {
     try {
         // Saat 15:40 geçtiği için 15:55'e kuruyoruz (Panelde görünmesi için)
-        const gonderimZamani = "2026-04-05 15:55:00 GMT+0300";
+        // Saat 15:43 olduğu için, rahat yetişmek adına 16:05 yapıyoruz
+const gonderimZamani = "2026-04-05 16:05:00 GMT+0300";
 
         const response = await axios.post('https://onesignal.com/api/v1/notifications', {
             app_id: APP_ID,
