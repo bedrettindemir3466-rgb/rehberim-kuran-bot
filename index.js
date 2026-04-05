@@ -2,13 +2,19 @@ const axios = require('axios');
 const cron = require('node-cron');
 const http = require('http');
 
+// Render Environment Variables'dan gelen bilgiler
 const APP_ID = process.env.ONESIGNAL_APP_ID;
 const API_KEY = process.env.ONESIGNAL_REST_KEY;
+
+const gunlukMesajlar = [
+    { baslik: "Günün Ayeti", icerik: "“Şüphesiz güçlükle beraber bir kolaylık vardır.” (İnşirah, 5)" },
+    { baslik: "Günün Hadisi", icerik: "“Kolaylaştırınız, zorlaştırmayınız; müjdeleyiniz, nefret ettirmeyiniz.” (Buhârî)" }
+];
 
 async function startEzanRobot() {
     console.log("--- 🚀 Robot Goreve Basladi ---");
     try {
-        // 1. VAKİTLERİ ÇEK (Aladhan)
+        // 1. VAKİTLERİ ÇEK (İstanbul / Büyükçekmece)
         console.log("📡 Vakitler Aladhan'dan aliniyor...");
         const res = await axios.get('http://api.aladhan.com/v1/timingsByAddress?address=Buyukcekmece,Istanbul,Turkey&method=13');
         const t = res.data.data.timings;
@@ -21,38 +27,58 @@ async function startEzanRobot() {
             { ad: "Yatsi", saat: t.Isha }
         ];
 
-        // 2. TEST MESAJI (14:15 için - Eğer vakit geçtiyse 14:20 yapın)
-        await sendToOneSignal("TEST", "Sistem artik %100 aktif! ✅", "14:15");
+        // 2. TEST MESAJI (Saat 14:15 için planlandı)
+        await sendToOneSignal("TEST MESAJI", "Cihan Bey, sistem artik %100 aktif ve sizi taniyor! ✅", "14:15");
 
-        // 3. VAKİTLERİ TEK TEK PLANLA
+        // 3. GÜNLÜK MANEVİ MESAJ (Yarın Sabah 08:00)
+        const rastgele = gunlukMesajlar[Math.floor(Math.random() * gunlukMesajlar.length)];
+        await sendToOneSignal(rastgele.baslik, rastgele.icerik, "08:00");
+
+        // 4. NAMAZ VAKİTLERİNİ PLANLA
         for (const v of vakitler) {
+            // Ezan Vakti Bildirimi
             await sendToOneSignal(v.ad, `${v.ad} Ezani Okunuyor...`, v.saat);
-            await sendToOneSignal(`${v.ad} Uyari`, `${v.ad} ezanina 15 dakika kaldi.`, dakikaHesapla(v.saat, -15));
+            
+            // 15 Dakika Önceki Hatırlatıcı
+            const onbesDk = dakikaHesapla(v.saat, -15);
+            await sendToOneSignal(`${v.ad} Uyari`, `${v.ad} ezanina 15 dakika kaldi.`, onbesDk);
+            
+            // İstekler arası kısa bekleme
+            await new Promise(r => setTimeout(r, 1000));
         }
 
         console.log("--- ✅ TUM PLANLAMALAR ONESIGNAL'A ILETILDI ---");
         return true;
     } catch (error) {
-        console.error("❌ HATA:", error.message);
+        console.error("❌ ANA HATA:", error.message);
         return false;
     }
 }
 
 async function sendToOneSignal(baslik, mesaj, zaman) {
     try {
-        const bugun = new Date().toISOString().split('T')[0];
+        const simdi = new Date();
+        const tarihStr = simdi.toISOString().split('T')[0]; // YYYY-MM-DD
+        const planZaman = `${tarihStr} ${zaman}:00 GMT+0300`;
+
         const response = await axios.post('https://onesignal.com/api/v1/notifications', {
             app_id: APP_ID,
             headings: { "tr": baslik },
             contents: { "tr": mesaj },
             included_segments: ["Subscribed Users"],
-            send_after: `${bugun} ${zaman}:00 GMT+0300`
+            send_after: planZaman
         }, {
-            headers: { 'Authorization': `Basic ${API_KEY}`, 'Content-Type': 'application/json' }
+            headers: { 
+                'Authorization': `Basic ${API_KEY}`,
+                'Content-Type': 'application/json' 
+            }
         });
-        if (response.data.id) console.log(`✅ Planlandi: ${baslik} (${zaman})`);
+        
+        if (response.data.id) {
+            console.log(`✅ Planlandi: ${baslik} (${zaman})`);
+        }
     } catch (e) {
-        // Zamanı geçmiş vakitler hata verebilir, bu normaldir.
+        // Geçmişteki saatler (örneğin sabah geçmiş olan İmsak) için OneSignal hata verir, bu normaldir.
     }
 }
 
@@ -63,19 +89,20 @@ function dakikaHesapla(saatStr, fark) {
     return `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
 }
 
-// ANA SUNUCU BAŞLATMA
+// RENDER SERVER VE TETİKLEYİCİ
 const server = http.createServer((req, res) => {
     res.writeHead(200);
-    res.end('Bot Aktif');
+    res.end('Ayet Online Robotu Aktif');
 });
 
-// KRİTİK NOKTA: Önce robot işini bitirsin, sonra sunucu açılsın!
 async function main() {
-    await startEzanRobot();
+    await startEzanRobot(); // Önce planla
     server.listen(process.env.PORT || 3000, () => {
-        console.log("==> Render servisi simdi aktif edildi.");
+        console.log("==> Render servisi hazir.");
     });
 }
 
 main();
+
+// Her gece 00:05'te otomatik yenileme
 cron.schedule('5 0 * * *', startEzanRobot);
