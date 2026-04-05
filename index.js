@@ -3,11 +3,11 @@ const http = require('http');
 
 const APP_ID = process.env.ONESIGNAL_APP_ID;
 const API_KEY = process.env.ONESIGNAL_REST_KEY;
-const SEHIR = "Istanbul"; // Şehir ismini buradan değiştirebilirsiniz
+const SEHIR = "Istanbul"; 
 
-// Rastgele Ayet ve Hadis Havuzu (Sistemi zenginleştirmek için buraya ekleme yapabilirsiniz)
+// Ayet ve Hadis Havuzu
 const ayetler = [
-    { tr: "Namazı kılın, zekâtı verin. Rüku edenlerle birlikte siz de rüku edin.", en: "Establish prayer and give zakah and bow with those who bow [in worship and obedience]." },
+    { tr: "Namazı kılın, zekâtı verin. Rüku edenlerle birlikte siz de rüku edin.", en: "Establish prayer and give zakah and bow with those who bow." },
     { tr: "Sabır ve namazla Allah’tan yardım isteyin.", en: "Seek help through patience and prayer." }
 ];
 
@@ -21,7 +21,6 @@ const server = http.createServer(async (req, res) => {
 
     if (req.url === '/vakitleri-kur') {
         try {
-            // 1. Namaz Vakitlerini Çek (Aladhan API)
             const vResponse = await axios.get(`http://api.aladhan.com/v1/timingsByCity?city=${SEHIR}&country=Turkey&method=13`);
             const v = vResponse.data.data.timings;
             const bugun = new Date().toISOString().split('T')[0];
@@ -35,49 +34,47 @@ const server = http.createServer(async (req, res) => {
             ];
 
             for (let vkt of vakitListesi) {
-                // Rastgele içerik seçimi
-                const rastgeleAyet = ayetler[Math.floor(Math.random() * ayetler.length)];
-                const rastgeleHadis = hadisler[Math.floor(Math.random() * hadisler.length)];
-
-                // A. 15 DAKİKA ÖNCE HATIRLATMA (Namaz yaklaşıyor)
-                const hatirlat Zaman = hesaplaZaman(vkt.saat, -15);
+                const rAyet = ayetler[Math.floor(Math.random() * ayetler.length)];
+                
+                // 15 DAKİKA ÖNCE HATIRLATMA (Boşluk hatası düzeltildi)
+                const hatirlatZaman = hesaplaZaman(vkt.saat, -15);
                 await bildirimGonder(
-                    `${vkt.ad} Vakti Yaklaşıyor`, `15 dakika sonra ${vkt.ad} vakti girecek.`,
-                    `${vkt.ad} is Approaching`, `${vkt.ad} starts in 15 minutes.`,
+                    `${vkt.ad} Vakti Yaklaşıyor`, `15 dakika sonra ${vkt.ad} vakti girecek. Hazırlanmayı unutmayın.`,
+                    `${vkt.ad} Approaching`, `${vkt.ad} starts in 15 minutes.`,
                     `${bugun} ${hatirlatZaman}:00 GMT+0300`
                 );
 
-                // B. TAM VAKTİNDE EZAN (Ayet/Hadis ile)
+                // TAM VAKTİNDE EZAN + AYET
                 await bildirimGonder(
-                    `Ezan Okunuyor: ${vkt.ad}`, `${vkt.ad} vakti girdi. Ayet: ${rastgeleAyet.tr}`,
-                    `Adhan: ${vkt.ad}`, `It's time for ${vkt.ad}. Verse: ${rastgeleAyet.en}`,
+                    `Ezan Okunuyor: ${vkt.ad}`, `${vkt.ad} vakti girdi. Ayet: ${rAyet.tr}`,
+                    `Adhan: ${vkt.ad}`, `It's time for ${vkt.ad}. Verse: ${rAyet.en}`,
                     `${bugun} ${vkt.saat}:00 GMT+0300`
                 );
             }
 
-            res.end(`<h1>✅ BAŞARILI!</h1><p>${SEHIR} için tüm vakitler (Hatırlatmalı + Ayetli) kuruldu.</p>`);
+            res.end(`<h1>✅ BAŞARILI!</h1><p>${SEHIR} için tüm vakitler hatasız kuruldu.</p>`);
         } catch (e) {
-            res.end(`<h1>❌ HATA:</h1><p>${e.message}</p>`);
+            const detay = e.response ? JSON.stringify(e.response.data) : e.message;
+            res.end(`<h1>❌ HATA:</h1><p>${detay}</p>`);
         }
     } else {
-        res.end("<h1>Cihan Yazılım Namaz Otomasyonu</h1>");
+        res.end("<h1>Cihan Yazılım Namaz Otomasyonu</h1><p>/vakitleri-kur linkine tıkla.</p>");
     }
 });
 
-// OneSignal Gönderim Fonksiyonu
 async function bildirimGonder(baslikTr, icerikTr, baslikEn, icerikEn, zaman) {
     return axios.post('https://onesignal.com/api/v1/notifications', {
         app_id: APP_ID,
         headings: { "tr": baslikTr, "en": baslikEn },
         contents: { "tr": icerikTr, "en": icerikEn },
         included_segments: ["Total Subscriptions"],
+        isAndroid: true, isIos: true,
         send_after: zaman
     }, {
         headers: { 'Authorization': `Basic ${API_KEY}`, 'Content-Type': 'application/json' }
     });
 }
 
-// Saat hesaplama fonksiyonu (15 dk geri çekmek için)
 function hesaplaZaman(saatDizisi, farkDakika) {
     let [saat, dakika] = saatDizisi.split(':').map(Number);
     let d = new Date();
