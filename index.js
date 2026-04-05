@@ -1,59 +1,75 @@
 const axios = require('axios');
 const http = require('http');
 
+// Render panelindeki Environment Variables kısmından çekilen bilgiler
 const APP_ID = process.env.ONESIGNAL_APP_ID;
 const API_KEY = process.env.ONESIGNAL_REST_KEY;
 
 const server = http.createServer(async (req, res) => {
-    // 1. ESKİ ÇALIŞAN LİNK (Anında telefona gönderir)
+    // Tarayıcıdan https://rehberim-kuran-bot.onrender.com/test-gonder adresine girince çalışır
     if (req.url === '/test-gonder') {
-        const sonuc = await mesajGonder(null); // null = hemen gönder
+        console.log("--- 🚨 KANIT SİNYALİ GÖNDERİLİYOR ---");
+        
+        const sonuc = await kanitMesajiGonder();
+        
         res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-        res.end(sonuc ? "<h1>✅ ANINDA BİLDİRİM GİTTİ!</h1>" : "<h1>❌ HATA!</h1>");
-    } 
-    // 2. YENİ LİNK (Sabahtan beri istediğimiz o listeyi doldurur)
-    else if (req.url === '/plana-ekle') {
-        const sonuc = await mesajGonder("2026-04-05 17:00:00 GMT+0300");
+        if (sonuc) {
+            res.end(`
+                <div style="text-align:center; margin-top:50px; font-family:sans-serif;">
+                    <h1 style="color:green;">✅ TALİMAT ONESIGNAL'A İLETİLDİ!</h1>
+                    <p>OneSignal bu isteği kabul etti. Şimdi telefonunuzu veya OneSignal panelini kontrol edin.</p>
+                </div>
+            `);
+        } else {
+            res.end(`
+                <div style="text-align:center; margin-top:50px; font-family:sans-serif;">
+                    <h1 style="color:red;">❌ ONESIGNAL REDDETTİ!</h1>
+                    <p>Loglara bak, bir hata var.</p>
+                </div>
+            `);
+        }
+    } else {
+        // Ana sayfa mesajı
         res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-        res.end(sonuc ? "<h1>✅ PANELDE 17:00 İÇİN PLANLANDI!</h1>" : "<h1>❌ HATA!</h1>");
-    } 
-    else {
-        res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-        res.end("<h1>Bot Hazır</h1><p>/test-gonder (Anında) | /plana-ekle (Panelde Görünür)</p>");
+        res.end("<h1>Bot Aktif</h1><p>Test için sonuna <b>/test-gonder</b> ekleyin.</p>");
     }
 });
 
-async function mesajGonder(zaman) {
+async function kanitMesajiGonder() {
     try {
-        const data = {
+        const response = await axios.post('https://onesignal.com/api/v1/notifications', {
             app_id: APP_ID,
-            headings: { "tr": zaman ? "SAAT 17:00 PLANI" : "ANLIK TEST" },
-            contents: { "tr": zaman ? "Bu mesaj listede görünmeli!" : "Bu mesaj anında gelmeli!" },
+            headings: { "tr": "BAĞLANTI KANITI", "en": "CONNECTION TEST" },
+            contents: { "tr": "Render üzerinden gelen onay mesajıdır!", "en": "Success from Render!" },
+            // Tüm kayıtlı abonelere gönderir
             included_segments: ["Total Subscriptions"],
+            isAnyWeb: true,
             isAndroid: true,
             isIos: true
-        };
-
-        // Eğer zaman varsa OneSignal'a "beklet" diyoruz (Panelde görünmesini sağlayan yer)
-        if (zaman) {
-            data.send_after = zaman;
-        }
-
-        const response = await axios.post('https://onesignal.com/api/v1/notifications', data, {
+        }, {
             headers: { 
                 'Authorization': `Basic ${API_KEY}`,
                 'Content-Type': 'application/json' 
             }
         });
 
-        return !!(response.data && response.data.id);
+        if (response.data && response.data.id) {
+            console.log("🚀 ONAY: Mesaj iletildi. ID:", response.data.id);
+            return true;
+        }
+        return false;
     } catch (e) {
-        console.error("❌ HATA:", JSON.stringify(e.response ? e.response.data : e.message));
+        if (e.response) {
+            console.error("❌ HATA DETAYI:", JSON.stringify(e.response.data));
+        } else {
+            console.error("❌ SİSTEMSEL HATA:", e.message);
+        }
         return false;
     }
 }
 
+// Render'ın port ayarı (Varsayılan 10000)
 const PORT = process.env.PORT || 10000;
 server.listen(PORT, () => {
-    console.log(`==> Sistem ${PORT} portunda hazır.`);
+    console.log(`==> Sunucu ${PORT} portunda hazır.`);
 });
