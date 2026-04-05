@@ -1,39 +1,44 @@
 const axios = require('axios');
 const http = require('http');
 
+// Render'daki Environment Variables kısmından çekilecek
 const APP_ID = process.env.ONESIGNAL_APP_ID;
 const API_KEY = process.env.ONESIGNAL_REST_KEY;
 
-// 1. MANUEL TETİKLEME MERKEZİ
 const server = http.createServer(async (req, res) => {
-    // Tarayıcıdan Render linkine girildiğinde (örneğin: /test-gonder)
+    // Tarayıcıdan bu linke tıklandığında tetiklenir:
+    // https://rehberim-kuran-bot.onrender.com/test-gonder
     if (req.url === '/test-gonder') {
-        console.log("--- 🚨 MANUEL TETIKLEME ALINDI! ---");
+        console.log("--- 🚨 MANUEL TETİKLEME BAŞLADI ---");
         
         const sonuc = await kanitMesajiGonder();
         
         res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
         if (sonuc) {
-            res.end("<h1>✅ TALİMAT ONESIGNAL'A İLETİLDİ!</h1><p>Şimdi OneSignal paneline bak, eğer orada yoksa bağlantı yoktur.</p>");
+            res.end("<h1>✅ BAŞARILI!</h1><p>OneSignal bu mesajı kabul etti. Paneli kontrol edebilirsiniz.</p>");
         } else {
-            res.end("<h1>❌ ONESIGNAL REDDETTİ!</h1><p>Loglara bak, bir hata var.</p>");
+            res.end("<h1>❌ REDDEDİLDİ!</h1><p>OneSignal isteği geri çevirdi. Render loglarındaki hatayı kontrol edin.</p>");
         }
     } else {
         res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-        res.end("<h1>Bot Calisiyor.</h1><p>Test etmek icin linkin sonuna <b>/test-gonder</b> ekle.</p>");
+        res.end("<h1>Bot Aktif</h1><p>Test için <b>/test-gonder</b> ekine gidin.</p>");
     }
 });
 
 async function kanitMesajiGonder() {
     try {
-        console.log("📡 OneSignal'a kanit mesaji gonderiliyor...");
+        console.log("📡 OneSignal'a istek gönderiliyor...");
         
         const response = await axios.post('https://onesignal.com/api/v1/notifications', {
             app_id: APP_ID,
-            headings: { "tr": "BAĞLANTI KANITI" },
-            contents: { "tr": "Eğer bu mesajı panelde görüyorsan Render-OneSignal bağı kurulmuştur!" },
-            included_segments: ["Subscribed Users"]
-            // send_after YOK! Hemen gitsin ki kanit olsun.
+            headings: { "tr": "BAĞLANTI TESTİ" },
+            contents: { "tr": "Render üzerinden gönderilen onay mesajıdır." },
+            // En garanti alıcı hedeflemesi:
+            included_segments: ["Total Subscriptions"],
+            // Web/Android/iOS ayrımı yapmadan herkese:
+            isAnyWeb: true,
+            isAndroid: true,
+            isIos: true
         }, {
             headers: { 
                 'Authorization': `Basic ${API_KEY}`,
@@ -42,20 +47,22 @@ async function kanitMesajiGonder() {
         });
 
         if (response.data.id) {
-            console.log(`🚀 BAŞARILI! Mesaj ID: ${response.data.id}`);
+            console.log(`🚀 ONAY ALINDI! OneSignal Mesaj ID: ${response.data.id}`);
             return true;
         }
     } catch (e) {
         if (e.response) {
-            console.log("❌ ONESIGNAL HATASI:", JSON.stringify(e.response.data));
+            // OneSignal'ın neden reddettiğini anlamak için burası kritik:
+            console.error("❌ ONESIGNAL RED SEBEBİ:", JSON.stringify(e.response.data));
         } else {
-            console.log("❌ ERISIM HATASI:", e.message);
+            console.error("❌ SİSTEMSEL HATA:", e.message);
         }
         return false;
     }
 }
 
-const PORT = process.env.PORT || 3000;
+// Render'ın beklediği port ayarı
+const PORT = process.env.PORT || 10000;
 server.listen(PORT, () => {
-    console.log(`==> Kanit Robotu ${PORT} portunda hazir.`);
+    console.log(`==> Server ${PORT} portunda hazır. Sinyal bekleniyor...`);
 });
