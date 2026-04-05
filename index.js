@@ -10,27 +10,34 @@ const server = http.createServer(async (req, res) => {
 
     if (req.url === '/vakitleri-kur') {
         try {
-            // 1. Namaz Vakitlerini Çek
+            // 1. Namaz Vakitleri
             const vResponse = await axios.get(`http://api.aladhan.com/v1/timingsByCity?city=${SEHIR}&country=Turkey&method=13`);
             const v = vResponse.data.data.timings;
 
-            // 2. OTOMATİK AYET ÇEK (api.alquran.cloud)
+            // 2. Otomatik Ayet (Hata payı düşük)
             const rastgeleAyetNo = Math.floor(Math.random() * 6236) + 1;
             const ayetRes = await axios.get(`https://api.alquran.cloud/v1/ayah/${rastgeleAyetNo}/editions/tr.diyanet,en.asad`);
             const ayetTr = ayetRes.data.data[0].text;
             const ayetEn = ayetRes.data.data[1].text;
             const sureBilgi = `${ayetRes.data.data[0].surah.englishName} (${ayetRes.data.data[0].numberInSurah})`;
 
-            // 3. OTOMATİK HADİS ÇEK (Hadith API - Sunnah verileri)
-            // Not: Rastgele bir hadis kitabı ve numarası seçer
-            const kitaplar = ['bukhari', 'muslim', 'abudawud', 'tirmidhi'];
-            const rastgeleKitap = kitaplar[Math.floor(Math.random() * kitaplar.length)];
-            const hadisRes = await axios.get(`https://hadis-api-id.vercel.app/hadith/${rastgeleKitap}?page=1&limit=100`);
-            const hadisler = hadisRes.data.items;
-            const rHadis = hadisler[Math.floor(Math.random() * hadisler.length)];
+            // 3. Otomatik Hadis (404 Hatasına Karşı Korumalı)
+            let hadisTr = "Hayra vesile olan, hayrı yapan gibidir.";
+            let hadisEn = "One who guides to something good has a reward similar to that of its doer.";
             
-            const hadisTr = rHadis.tr || "Hayra vesile olan, hayrı yapan gibidir.";
-            const hadisEn = rHadis.en || "One who guides to something good has a reward similar to that of its doer.";
+            try {
+                const kitaplar = ['bukhari', 'muslim', 'tirmidhi'];
+                const rastgeleKitap = kitaplar[Math.floor(Math.random() * kitaplar.length)];
+                // Daha stabil bir API endpoint'i deniyoruz
+                const hRes = await axios.get(`https://hadis-api-id.vercel.app/hadith/${rastgeleKitap}?page=1&limit=20`);
+                if (hRes.data && hRes.data.items) {
+                    const rH = hRes.data.items[Math.floor(Math.random() * hRes.data.items.length)];
+                    hadisTr = rH.tr || hadisTr;
+                    hadisEn = rH.en || hadisEn;
+                }
+            } catch (hata) {
+                console.log("Hadis API hatası, yedek hadis kullanılıyor.");
+            }
 
             const vakitListesi = [
                 { ad: "İmsak", saat: v.Fajr },
@@ -41,15 +48,9 @@ const server = http.createServer(async (req, res) => {
             ];
 
             for (let vkt of vakitListesi) {
-                // A. 15 DK ÖNCE HATIRLATMA
                 const hZaman = hesaplaZaman(vkt.saat, -15);
-                await bildirimGonder(
-                    `${vkt.ad} Yaklaşıyor`, "Hazırlanmak için 15 dakikanız var.",
-                    `${vkt.ad} is Near`, "15 minutes until prayer time.",
-                    tarihBelirle(hZaman)
-                );
+                await bildirimGonder(`${vkt.ad} Yaklaşıyor`, "15 dakikanız var.", `${vkt.ad} is Near`, "15 mins left.", tarihBelirle(hZaman));
 
-                // B. TAM VAKTİNDE EZAN
                 let icerikTr = `${vkt.ad} vakti girdi.`;
                 let icerikEn = `It is time for ${vkt.ad}.`;
 
@@ -58,23 +59,18 @@ const server = http.createServer(async (req, res) => {
                     icerikEn += ` \n📖 Verse: ${ayetEn} (${sureBilgi}) \n💬 Hadith: ${hadisEn}`;
                 }
 
-                await bildirimGonder(
-                    `Ezan: ${vkt.ad}`, icerikTr,
-                    `Adhan: ${vkt.ad}`, icerikEn,
-                    tarihBelirle(vkt.saat)
-                );
+                await bildirimGonder(`Ezan: ${vkt.ad}`, icerikTr, `Adhan: ${vkt.ad}`, icerikEn, tarihBelirle(vkt.saat));
             }
 
-            res.end(`<h1>✅ %100 OTOMATİK SİSTEM AKTİF</h1><p>Ayet ve Hadisler internetten canlı çekildi.</p>`);
+            res.end(`<h1>✅ %100 BAŞARILI</h1><p>Sistem 404 hatalarına karşı güçlendirildi.</p>`);
         } catch (e) {
-            res.end(`<h1>❌ HATA:</h1><p>${e.message}</p>`);
+            res.end(`<h1>❌ KRİTİK HATA:</h1><p>${e.message}</p>`);
         }
     } else {
-        res.end("<h1>Cihan Yazılım Full Otomasyon</h1>");
+        res.end("<h1>Cihan Yazılım Rehber Bot</h1>");
     }
 });
 
-// Yardımcı fonksiyonlar (Tarih ve Saat hesaplama)
 function tarihBelirle(vakitSaati) {
     const simdi = new Date(new Date().toLocaleString("en-US", {timeZone: "Europe/Istanbul"}));
     const [saat, dakika] = vakitSaati.split(':').map(Number);
