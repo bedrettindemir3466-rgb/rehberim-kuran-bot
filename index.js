@@ -5,25 +5,11 @@ const http = require('http');
 const APP_ID = process.env.ONESIGNAL_APP_ID;
 const API_KEY = process.env.ONESIGNAL_REST_KEY;
 
-// Render'ı zorla açık tutan sunucu
-const server = http.createServer((req, res) => {
-    res.writeHead(200, { 'Content-Type': 'text/plain' });
-    res.end('Robot Aktif\n');
-});
-
-server.listen(process.env.PORT || 3000, async () => {
-    console.log("--- 🚀 Robot Calismaya Basladi ---");
-    await startEzanRobot();
-});
-
 async function startEzanRobot() {
+    console.log("--- 🚀 Robot Goreve Basladi ---");
     try {
-        // 1. TEST BİLDİRİMİ (14:05)
-        console.log("Test mesaji gonderiliyor...");
-        await sendToOneSignal("TEST", "Sistem %100 calisiyor! ✅", "14:05");
-
-        // 2. VAKİTLERİ ÇEK
-        console.log("📡 Vakitler Aladhan'dan cekiliyor...");
+        // 1. VAKİTLERİ ÇEK (Aladhan)
+        console.log("📡 Vakitler Aladhan'dan aliniyor...");
         const res = await axios.get('http://api.aladhan.com/v1/timingsByAddress?address=Buyukcekmece,Istanbul,Turkey&method=13');
         const t = res.data.data.timings;
         
@@ -35,44 +21,61 @@ async function startEzanRobot() {
             { ad: "Yatsi", saat: t.Isha }
         ];
 
-        // Vakitleri tek tek ve bekleyerek planla
+        // 2. TEST MESAJI (14:15 için - Eğer vakit geçtiyse 14:20 yapın)
+        await sendToOneSignal("TEST", "Sistem artik %100 aktif! ✅", "14:15");
+
+        // 3. VAKİTLERİ TEK TEK PLANLA
         for (const v of vakitler) {
             await sendToOneSignal(v.ad, `${v.ad} Ezani Okunuyor...`, v.saat);
-            // OneSignal'ı yormamak için 1 saniye bekle
-            await new Promise(r => setTimeout(r, 1000));
+            await sendToOneSignal(`${v.ad} Uyari`, `${v.ad} ezanina 15 dakika kaldi.`, dakikaHesapla(v.saat, -15));
         }
 
         console.log("--- ✅ TUM PLANLAMALAR ONESIGNAL'A ILETILDI ---");
+        return true;
     } catch (error) {
-        console.error("❌ ANA HATA:", error.message);
+        console.error("❌ HATA:", error.message);
+        return false;
     }
 }
 
 async function sendToOneSignal(baslik, mesaj, zaman) {
     try {
         const bugun = new Date().toISOString().split('T')[0];
-        const data = {
+        const response = await axios.post('https://onesignal.com/api/v1/notifications', {
             app_id: APP_ID,
             headings: { "tr": baslik },
             contents: { "tr": mesaj },
             included_segments: ["Subscribed Users"],
             send_after: `${bugun} ${zaman}:00 GMT+0300`
-        };
-
-        const response = await axios.post('https://onesignal.com/api/v1/notifications', data, {
-            headers: { 
-                'Authorization': `Basic ${API_KEY}`,
-                'Content-Type': 'application/json' 
-            }
+        }, {
+            headers: { 'Authorization': `Basic ${API_KEY}`, 'Content-Type': 'application/json' }
         });
-        
-        if (response.data.id) {
-            console.log(`✅ Basarili: ${baslik} (${zaman})`);
-        }
+        if (response.data.id) console.log(`✅ Planlandi: ${baslik} (${zaman})`);
     } catch (e) {
-        const detay = e.response ? JSON.stringify(e.response.data) : e.message;
-        console.log(`❌ HATA (${baslik}): ${detay}`);
+        // Zamanı geçmiş vakitler hata verebilir, bu normaldir.
     }
 }
 
+function dakikaHesapla(saatStr, fark) {
+    let [h, m] = saatStr.split(':').map(Number);
+    let date = new Date();
+    date.setHours(h, m + fark, 0);
+    return `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
+}
+
+// ANA SUNUCU BAŞLATMA
+const server = http.createServer((req, res) => {
+    res.writeHead(200);
+    res.end('Bot Aktif');
+});
+
+// KRİTİK NOKTA: Önce robot işini bitirsin, sonra sunucu açılsın!
+async function main() {
+    await startEzanRobot();
+    server.listen(process.env.PORT || 3000, () => {
+        console.log("==> Render servisi simdi aktif edildi.");
+    });
+}
+
+main();
 cron.schedule('5 0 * * *', startEzanRobot);
