@@ -1,77 +1,59 @@
 const axios = require('axios');
 const http = require('http');
 
-// Render panelindeki Environment Variables kısmından çekilen bilgiler
 const APP_ID = process.env.ONESIGNAL_APP_ID;
 const API_KEY = process.env.ONESIGNAL_REST_KEY;
 
 const server = http.createServer(async (req, res) => {
-    // Tarayıcıdan bu adrese girdiğinizde planlama tetiklenir:
-    // https://rehberim-kuran-bot.onrender.com/plana-ekle
-    if (req.url === '/plana-ekle') {
-        console.log("--- 📅 17:00 PLANI ONESIGNAL'A GÖNDERİLİYOR ---");
-        
-        const sonuc = await planliMesajGonder();
-        
+    // 1. ESKİ ÇALIŞAN LİNK (Anında telefona gönderir)
+    if (req.url === '/test-gonder') {
+        const sonuc = await mesajGonder(null); // null = hemen gönder
         res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-        if (sonuc) {
-            res.end(`
-                <div style="text-align:center; margin-top:50px; font-family:sans-serif;">
-                    <h1 style="color:green;">✅ PANELDE PLANLANDI!</h1>
-                    <p>OneSignal bu görevi kabul etti. Şimdi OneSignal panelindeki <b>'Scheduled'</b> kısmını yenileyin.</p>
-                </div>
-            `);
-        } else {
-            res.end(`
-                <div style="text-align:center; margin-top:50px; font-family:sans-serif;">
-                    <h1 style="color:red;">❌ HATA OLUŞTU!</h1>
-                    <p>Render loglarını (siyah ekran) kontrol edin.</p>
-                </div>
-            `);
-        }
-    } else {
-        // Ana sayfa
+        res.end(sonuc ? "<h1>✅ ANINDA BİLDİRİM GİTTİ!</h1>" : "<h1>❌ HATA!</h1>");
+    } 
+    // 2. YENİ LİNK (Sabahtan beri istediğimiz o listeyi doldurur)
+    else if (req.url === '/plana-ekle') {
+        const sonuc = await mesajGonder("2026-04-05 17:00:00 GMT+0300");
         res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-        res.end("<h1>Zamanlayıcı Bot Hazır</h1><p>Planı panelde görmek için sonuna <b>/plana-ekle</b> ekleyin.</p>");
+        res.end(sonuc ? "<h1>✅ PANELDE 17:00 İÇİN PLANLANDI!</h1>" : "<h1>❌ HATA!</h1>");
+    } 
+    else {
+        res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+        res.end("<h1>Bot Hazır</h1><p>/test-gonder (Anında) | /plana-ekle (Panelde Görünür)</p>");
     }
 });
 
-async function planliMesajGonder() {
+async function mesajGonder(zaman) {
     try {
-        // Tam saat 17:00:00 (Türkiye Saati)
-        const gonderimZamani = "2026-04-05 17:00:00 GMT+0300";
-
-        const response = await axios.post('https://onesignal.com/api/v1/notifications', {
+        const data = {
             app_id: APP_ID,
-            headings: { "tr": "SAAT 17:00 TESTİ" },
-            contents: { "tr": "Sabahtan beri beklediğimiz liste nihayet doldu!" },
+            headings: { "tr": zaman ? "SAAT 17:00 PLANI" : "ANLIK TEST" },
+            contents: { "tr": zaman ? "Bu mesaj listede görünmeli!" : "Bu mesaj anında gelmeli!" },
             included_segments: ["Total Subscriptions"],
-            // Bu parametre mesajı paneldeki 'Scheduled' (Planlanmış) sekmesine düşürür:
-            send_after: gonderimZamani 
-        }, {
+            isAndroid: true,
+            isIos: true
+        };
+
+        // Eğer zaman varsa OneSignal'a "beklet" diyoruz (Panelde görünmesini sağlayan yer)
+        if (zaman) {
+            data.send_after = zaman;
+        }
+
+        const response = await axios.post('https://onesignal.com/api/v1/notifications', data, {
             headers: { 
                 'Authorization': `Basic ${API_KEY}`,
                 'Content-Type': 'application/json' 
             }
         });
 
-        if (response.data && response.data.id) {
-            console.log("🚀 BAŞARILI: Mesaj 17:00 için planlandı. ID:", response.data.id);
-            return true;
-        }
-        return false;
+        return !!(response.data && response.data.id);
     } catch (e) {
-        if (e.response) {
-            console.error("❌ ONESIGNAL HATASI:", JSON.stringify(e.response.data));
-        } else {
-            console.error("❌ SİSTEM HATASI:", e.message);
-        }
+        console.error("❌ HATA:", JSON.stringify(e.response ? e.response.data : e.message));
         return false;
     }
 }
 
-// Render Port Ayarı
 const PORT = process.env.PORT || 10000;
 server.listen(PORT, () => {
-    console.log(`==> 17:00 Planlayıcı Bot ${PORT} portunda yayında.`);
+    console.log(`==> Sistem ${PORT} portunda hazır.`);
 });
