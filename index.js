@@ -5,7 +5,6 @@ const APP_ID = process.env.ONESIGNAL_APP_ID;
 const API_KEY = process.env.ONESIGNAL_REST_KEY;
 
 const server = http.createServer(async (req, res) => {
-    // Cron-job için hızlı ve temiz yanıt başlığı
     if (req.url === '/vakitleri-kur') {
         try {
             // --- 1. ADIM: KULLANICILARI ÇEK ---
@@ -14,17 +13,16 @@ const server = http.createServer(async (req, res) => {
             });
             const users = usersRes.data.players;
 
-            for (let user of users) {
+            // --- HIZLANDIRMA MOTORU BURADA BAŞLIYOR ⚡ ---
+            // Tüm kullanıcıları aynı anda işlemeye başla
+            await Promise.all(users.map(async (user) => {
                 const lat = user.tags?.lat;
                 const lon = user.tags?.lon;
                 const playerId = user.id;
-
-                // --- 2. ADIM: AYARLAR'DAN GELEN ETİKET KONTROLÜ ---
-                // Eğer imsak_vakti etiketi "false" ise bu kullanıcıyı atlar.
                 const ezanAcikMi = user.tags?.imsak_vakti !== "false";
 
-                // --- 3. ADIM: SADECE EZAN BİLDİRİMLERİ ---
                 if (lat && lon && ezanAcikMi) {
+                    // Vakitleri Çek (Beklemeden devam etme, ama diğer kullanıcıları da engelleme)
                     const vRes = await axios.get(`http://api.aladhan.com/v1/timingsByAddress?address=${lat},${lon}&method=13`);
                     const v = vRes.data.data.timings;
 
@@ -36,8 +34,10 @@ const server = http.createServer(async (req, res) => {
                         { isim: "Yatsı", saat: v.Isha }
                     ];
 
-                    for (let vkt of vakitler) {
-                        await axios.post('https://onesignal.com/api/v1/notifications', {
+                    // --- BİLDİRİMLERİ AYNI ANDA FIRLAT 🚀 ---
+                    // 5 vakti sırayla değil, tek seferde OneSignal'a gönderiyoruz
+                    return Promise.all(vakitler.map(vkt => 
+                        axios.post('https://onesignal.com/api/v1/notifications', {
                             app_id: APP_ID,
                             include_player_ids: [playerId],
                             headings: { "en": `Ezan: ${vkt.isim}` },
@@ -45,11 +45,12 @@ const server = http.createServer(async (req, res) => {
                             send_after: tarihBelirle(vkt.saat)
                         }, {
                             headers: { 'Authorization': `Basic ${API_KEY}`, 'Content-Type': 'application/json' }
-                        });
-                    }
+                        })
+                    ));
                 }
-            }
-            // --- 4. ADIM: CRON-JOB DOSTU KISA CEVAP ---
+            }));
+
+            // --- 4. ADIM: CEVAP ---
             res.writeHead(200, { 'Content-Type': 'text/plain' });
             res.end("OK"); 
 
