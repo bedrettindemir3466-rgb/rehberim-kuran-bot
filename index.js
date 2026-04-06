@@ -8,13 +8,7 @@ const server = http.createServer(async (req, res) => {
     // Cron-job için hızlı ve temiz yanıt başlığı
     if (req.url === '/vakitleri-kur') {
         try {
-            // --- 1. ADIM: VERİLERİ ÇEK (Sessizce, Bildirim Gitmeden) ---
-            const rastgeleAyetNo = Math.floor(Math.random() * 6236) + 1;
-            const ayetRes = await axios.get(`https://api.alquran.cloud/v1/ayah/${rastgeleAyetNo}/editions/tr.diyanet`);
-            const ayetTr = ayetRes.data.data[0].text;
-            const sureBilgi = `${ayetRes.data.data[0].surah.englishName} (${ayetRes.data.data[0].numberInSurah})`;
-
-            // --- 2. ADIM: KULLANICILARI ÇEK ---
+            // --- 1. ADIM: KULLANICILARI ÇEK ---
             const usersRes = await axios.get(`https://onesignal.com/api/v1/players?app_id=${APP_ID}`, {
                 headers: { 'Authorization': `Basic ${API_KEY}` }
             });
@@ -24,9 +18,12 @@ const server = http.createServer(async (req, res) => {
                 const lat = user.tags?.lat;
                 const lon = user.tags?.lon;
                 const playerId = user.id;
+
+                // --- 2. ADIM: AYARLAR'DAN GELEN ETİKET KONTROLÜ ---
+                // Eğer imsak_vakti etiketi "false" ise bu kullanıcıyı atlar.
                 const ezanAcikMi = user.tags?.imsak_vakti !== "false";
 
-                // --- 3. ADIM: SADECE EZAN BİLDİRİMLERİ (Türkçe ve Tek Satır) ---
+                // --- 3. ADIM: SADECE EZAN BİLDİRİMLERİ ---
                 if (lat && lon && ezanAcikMi) {
                     const vRes = await axios.get(`http://api.aladhan.com/v1/timingsByAddress?address=${lat},${lon}&method=13`);
                     const v = vRes.data.data.timings;
@@ -43,7 +40,6 @@ const server = http.createServer(async (req, res) => {
                         await axios.post('https://onesignal.com/api/v1/notifications', {
                             app_id: APP_ID,
                             include_player_ids: [playerId],
-                            // OneSignal'ı kandırıyoruz: "en" içine Türkçe yazarak çift bildirimi engelliyoruz
                             headings: { "en": `Ezan: ${vkt.isim}` },
                             contents: { "en": `${vkt.isim} vakti girdi.` },
                             send_after: tarihBelirle(vkt.saat)
@@ -55,7 +51,7 @@ const server = http.createServer(async (req, res) => {
             }
             // --- 4. ADIM: CRON-JOB DOSTU KISA CEVAP ---
             res.writeHead(200, { 'Content-Type': 'text/plain' });
-            res.end("OK"); // Bu satır Cron-job hatasını bitirir.
+            res.end("OK"); 
 
         } catch (err) {
             console.error("Hata oluştu:", err.message);
