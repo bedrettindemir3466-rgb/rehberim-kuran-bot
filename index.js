@@ -18,9 +18,9 @@ const server = http.createServer(async (req, res) => {
 
             // --- 1. ADIM: KULLANICILARI ÇEK ---
 
-            const usersRes = await axios.get(https://onesignal.com/api/v1/players?app_id=${APP_ID}, {
+            const usersRes = await axios.get(`https://onesignal.com/api/v1/players?app_id=${APP_ID}`, {
 
-                headers: { 'Authorization': Basic ${API_KEY} }
+                headers: { 'Authorization': `Basic ${API_KEY}` }
 
             });
 
@@ -48,7 +48,7 @@ const server = http.createServer(async (req, res) => {
 
                     // Vakitleri Çek (Beklemeden devam etme, ama diğer kullanıcıları da engelleme)
 
-                    const vRes = await axios.get(http://api.aladhan.com/v1/timingsByAddress?address=${lat},${lon}&method=13);
+                    const vRes = await axios.get(`http://api.aladhan.com/v1/timingsByAddress?address=${lat},${lon}&method=13`);
 
                     const v = vRes.data.data.timings;
 
@@ -82,15 +82,15 @@ const server = http.createServer(async (req, res) => {
 
                             include_player_ids: [playerId],
 
-                            headings: { "en": Ezan: ${vkt.isim} },
+                            headings: { "en": `Ezan: ${vkt.isim}` },
 
-                            contents: { "en": ${vkt.isim} vakti girdi. },
+                            contents: { "en": `${vkt.isim} vakti girdi.` },
 
                             send_after: tarihBelirle(vkt.saat)
 
                         }, {
 
-                            headers: { 'Authorization': Basic ${API_KEY}, 'Content-Type': 'application/json' }
+                            headers: { 'Authorization': `Basic ${API_KEY}`, 'Content-Type': 'application/json' }
 
                         })
 
@@ -134,3 +134,22 @@ const server = http.createServer(async (req, res) => {
 
 function tarihBelirle(vakitSaati) {
 
+    const simdi = new Date(new Date().toLocaleString("en-US", {timeZone: "Europe/Istanbul"}));
+
+    const [saat, dakika] = vakitSaati.split(':').map(Number);
+
+    let hedef = new Date(simdi);
+
+    hedef.setHours(saat, dakika, 0, 0);
+
+    if (hedef <= simdi) hedef.setDate(hedef.getDate() + 1);
+
+    return `${hedef.getFullYear()}-${String(hedef.getMonth() + 1).padStart(2, '0')}-${String(hedef.getDate()).padStart(2, '0')} ${vakitSaati}:00 GMT+0300`;
+
+}
+
+
+
+const PORT = process.env.PORT || 10000;
+
+server.listen(PORT);
