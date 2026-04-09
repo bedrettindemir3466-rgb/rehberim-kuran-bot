@@ -7,14 +7,22 @@ const API_KEY = process.env.ONESIGNAL_REST_KEY;
 const server = http.createServer(async (req, res) => {
     if (req.url === '/vakitleri-kur') {
         try {
-            // --- 1. ADIM: KULLANICILARI ÇEK ---
-            const usersRes = await axios.get(`https://onesignal.com/api/v1/players?app_id=${APP_ID}`, {
-                headers: { 'Authorization': `Basic ${API_KEY}` }
+            // --- 1. ADIM: KULLANICILARI ÇEK (Limit ekleyerek büyük veri hatasını önlüyoruz) ---
+            // limit=300 ekleyerek tek seferde çok büyük veri gelmesini engelledik.
+            const usersRes = await axios.get(`https://onesignal.com/api/v1/players?app_id=${APP_ID}&limit=300`, {
+                headers: { 
+                    'Authorization': `Basic ${API_KEY}`,
+                    'Content-Type': 'application/json'
+                }
             });
             const users = usersRes.data.players;
 
-            // --- HIZLANDIRMA MOTORU BURADA BAŞLIYOR ⚡ ---
-            // Tüm kullanıcıları aynı anda işlemeye başla
+            if (!users || users.length === 0) {
+                res.writeHead(200);
+                return res.end("Kullanici bulunamadi.");
+            }
+
+            // --- HIZLANDIRMA MOTORU ---
             await Promise.all(users.map(async (user) => {
                 const lat = user.tags?.lat;
                 const lon = user.tags?.lon;
@@ -22,42 +30,42 @@ const server = http.createServer(async (req, res) => {
                 const ezanAcikMi = user.tags?.imsak_vakti !== "false";
 
                 if (lat && lon && ezanAcikMi) {
-                    // Vakitleri Çek (Beklemeden devam etme, ama diğer kullanıcıları da engelleme)
-                    const vRes = await axios.get(`http://api.aladhan.com/v1/timingsByAddress?address=${lat},${lon}&method=13`);
-                    const v = vRes.data.data.timings;
+                    try {
+                        const vRes = await axios.get(`http://api.aladhan.com/v1/timingsByAddress?address=${lat},${lon}&method=13`);
+                        const v = vRes.data.data.timings;
 
-                    const vakitler = [
-                        { isim: "İmsak", saat: v.Fajr },
-                        { isim: "Öğle", saat: v.Dhuhr },
-                        { isim: "İkindi", saat: v.Asr },
-                        { isim: "Akşam", saat: v.Maghrib },
-                        { isim: "Yatsı", saat: v.Isha }
-                    ];
+                        const vakitler = [
+                            { isim: "İmsak", saat: v.Fajr },
+                            { isim: "Öğle", saat: v.Dhuhr },
+                            { isim: "İkindi", saat: v.Asr },
+                            { isim: "Akşam", saat: v.Maghrib },
+                            { isim: "Yatsı", saat: v.Isha }
+                        ];
 
-                    // --- BİLDİRİMLERİ AYNI ANDA FIRLAT 🚀 ---
-                    // 5 vakti sırayla değil, tek seferde OneSignal'a gönderiyoruz
-                    return Promise.all(vakitler.map(vkt => 
-                        axios.post('https://onesignal.com/api/v1/notifications', {
-                            app_id: APP_ID,
-                            include_player_ids: [playerId],
-                            headings: { "en": `Ezan: ${vkt.isim}` },
-                            contents: { "en": `${vkt.isim} vakti girdi.` },
-                            send_after: tarihBelirle(vkt.saat)
-                        }, {
-                            headers: { 'Authorization': `Basic ${API_KEY}`, 'Content-Type': 'application/json' }
-                        })
-                    ));
+                        return Promise.all(vakitler.map(vkt => 
+                            axios.post('https://onesignal.com/api/v1/notifications', {
+                                app_id: APP_ID,
+                                include_player_ids: [playerId],
+                                headings: { "tr": `Ezan: ${vkt.isim}` },
+                                contents: { "tr": `${vkt.isim} vakti girdi.` },
+                                send_after: tarihBelirle(vkt.saat)
+                            }, {
+                                headers: { 'Authorization': `Basic ${API_KEY}`, 'Content-Type': 'application/json' }
+                            })
+                        ));
+                    } catch (e) {
+                        console.log(`Kullanici ${playerId} icin vakit cekilemedi.`);
+                    }
                 }
             }));
 
-            // --- 4. ADIM: CEVAP ---
             res.writeHead(200, { 'Content-Type': 'text/plain' });
             res.end("OK"); 
 
         } catch (err) {
             console.error("Hata oluştu:", err.message);
             res.writeHead(500);
-            res.end("Hata");
+            res.end("Hata: " + err.message);
         }
     } else {
         res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
@@ -71,7 +79,9 @@ function tarihBelirle(vakitSaati) {
     let hedef = new Date(simdi);
     hedef.setHours(saat, dakika, 0, 0);
     if (hedef <= simdi) hedef.setDate(hedef.getDate() + 1);
-    return `${hedef.getFullYear()}-${String(hedef.getMonth() + 1).padStart(2, '0')}-${String(hedef.getDate()).padStart(2, '0')} ${vakitSaati}:00 GMT+0300`;
+    
+    // OneSignal'ın beklediği net format: YYYY-MM-DD HH:mm:ss GMT+0300
+    return `${hedef.getFullYear()}-${String(hedef.getMonth() + 1).padStart(2, '0')}-${String(hedef.getDate()).padStart(2, '0')} ${String(saat).padStart(2, '0')}:${String(dakika).padStart(2, '0')}:00 GMT+0300`;
 }
 
 const PORT = process.env.PORT || 10000;
