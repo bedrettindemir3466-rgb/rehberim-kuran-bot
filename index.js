@@ -8,21 +8,29 @@ let sonKurulumTarihi = "";
 
 const server = http.createServer(async (req, res) => {
     if (req.url === '/vakitleri-kur') {
+        
+        // --- 1. ADIM: CRON-JOB'A HEMEN CEVAP VER (Hata Almasını Engeller) ---
+        // Cron-job bu cevabı aldığı an "Success" der ve bağlantıyı kapatır.
+        res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' });
+        res.end("OK - Islem arka planda baslatildi."); 
+
+        // --- 2. ADIM: ASIL İŞLEMLERİ ARKA PLANDA ÇALIŞTIR ---
+        // (res.end'den sonra kod çalışmaya devam eder)
         try {
             const bugun = new Date().toLocaleDateString("tr-TR", {timeZone: "Europe/Istanbul"});
+            
+            // Mükerrer Kontrolü
             if (sonKurulumTarihi === bugun) {
-                console.log("Zaten cevap verdim, artik gerek kalmadi.");
-                res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' });
-                return res.end("Zaten kuruldu, mukerrer islem engellendi.");
+                return console.log("Zaten kuruldu, arka planda islem yapilmadi.");
             }
 
+            // Kullanıcıları çek
             const usersRes = await axios.get(`https://onesignal.com/api/v1/players?app_id=${APP_ID}`, {
                 headers: { 'Authorization': `Basic ${API_KEY}` }
             });
             const users = usersRes.data.players;
 
-            // --- GÜVENLİ VE SIRALI MOTOR ⚡ ---
-            // Promise.all yerine for...of kullanarak Render'ı çökmeden koruyoruz
+            // Güvenli Sıralı Motor (For...of Render'ı korur)
             for (const user of users) {
                 const lat = user.tags?.lat;
                 const lon = user.tags?.lon;
@@ -42,7 +50,6 @@ const server = http.createServer(async (req, res) => {
                             { isim: "Yatsi", saat: v.Isha }
                         ];
 
-                        // Vakitleri gönderirken OneSignal'ı boğmuyoruz
                         for (const vkt of vakitler) {
                             await axios.post('https://onesignal.com/api/v1/notifications', {
                                 app_id: APP_ID,
@@ -55,20 +62,20 @@ const server = http.createServer(async (req, res) => {
                             });
                         }
                     } catch (e) {
-                        console.error(`Kullanici ${playerId} atlandi: ${e.message}`);
+                        console.error(`Kullanici ${playerId} hatasi: ${e.message}`);
                     }
                 }
             }
 
+            // Başarılı olursa günü mühürle
             sonKurulumTarihi = bugun;
-            res.writeHead(200, { 'Content-Type': 'text/plain' });
-            res.end("OK"); 
+            console.log("Arka plan islemi basariyla bitti.");
 
         } catch (err) {
-            console.error("Ana hata:", err.message);
-            res.writeHead(500);
-            res.end("Hata");
+            // Hata olsa bile sadece loga basıyoruz, Cron-job zaten gitmişti
+            console.error("Arka plan ana hata:", err.message);
         }
+
     } else {
         res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
         res.end("<h1>Cihan Yazılım Rehber Bot Aktif</h1>");
