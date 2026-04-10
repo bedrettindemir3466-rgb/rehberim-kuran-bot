@@ -25,9 +25,9 @@ async function sonSistem() {
             const lon = user.tags?.lon;
 
             if (lat && lon) {
-                const k = `${parseFloat(lat).toFixed(2)},${parseFloat(lon).toFixed(2)}`;
-                if (!gruplar[k]) gruplar[k] = [];
-                gruplar[k].push(user.id);
+                const key = `${parseFloat(lat).toFixed(2)},${parseFloat(lon).toFixed(2)}`;
+                if (!gruplar[key]) gruplar[key] = [];
+                gruplar[key].push(user.id);
             }
         });
 
@@ -37,7 +37,6 @@ async function sonSistem() {
             const [lat, lon] = konum.split(',');
 
             try {
-                // ✅ DÜZELTİLDİ: Koordinat için doğru endpoint
                 const vRes = await axios.get(
                     `https://api.aladhan.com/v1/timings?latitude=${lat}&longitude=${lon}&method=13&school=1`,
                     { timeout: 15000 }
@@ -46,16 +45,14 @@ async function sonSistem() {
                 const v = vRes.data.data.timings;
 
                 const vakitler = [
-                    { isim: "İmsak", s: v.Fajr },
-                    { isim: "Öğle", s: v.Dhuhr },
-                    { isim: "İkindi", s: v.Asr },
-                    { isim: "Akşam", s: v.Maghrib },
-                    { isim: "Yatsı", s: v.Isha }
+                    { isim: "İmsak", s: temizSaat(v.Fajr) },
+                    { isim: "Öğle", s: temizSaat(v.Dhuhr) },
+                    { isim: "İkindi", s: temizSaat(v.Asr) },
+                    { isim: "Akşam", s: temizSaat(v.Maghrib) },
+                    { isim: "Yatsı", s: temizSaat(v.Isha) }
                 ];
 
                 for (const vkt of vakitler) {
-                    const osVakti = formatOs(vkt.s);
-
                     try {
                         await axios.post(
                             'https://onesignal.com/api/v1/notifications',
@@ -63,16 +60,16 @@ async function sonSistem() {
                                 app_id: APP_ID,
                                 include_player_ids: gruplar[konum],
                                 contents: {
-                                    tr: `${vkt.isim} vakti.`,
+                                    tr: `${vkt.isim} vakti girdi.`,
                                     en: `${vkt.isim} time.`
                                 },
                                 headings: {
                                     tr: "Ezan",
                                     en: "Adhan"
                                 },
-                                delivery_time_of_day: osVakti,
                                 delayed_option: "timezone",
-                                
+                                delivery_time_of_day: vkt.s,
+                                throttle_rate_per_minute: 0
                             },
                             {
                                 headers: {
@@ -83,7 +80,7 @@ async function sonSistem() {
                             }
                         );
 
-                        console.log(`✅ ${konum} → ${vkt.isim} (${osVakti}) kuruldu`);
+                        console.log(`✅ ${konum} → ${vkt.isim} (${vkt.s}) kuruldu`);
                     } catch (e) {
                         console.error(
                             `❌ ${konum} ${vkt.isim} gönderim hatası:`,
@@ -104,16 +101,8 @@ async function sonSistem() {
     }
 }
 
-function formatOs(t) {
-    let [h, m] = t.split(':').map(Number);
-
-    const ampm = h >= 12 ? 'PM' : 'AM';
-    h = h % 12 || 12;
-
-    const hh = h < 10 ? '0' + h : String(h);
-    const mm = m < 10 ? '0' + m : String(m);
-
-    return `${hh}:${mm}:00${ampm}`;
+function temizSaat(saat) {
+    return saat.split(' ')[0].slice(0, 5); // HH:mm
 }
 
 sonSistem();
