@@ -1,0 +1,29 @@
+name: Gunluk Vakit Kurulumu
+
+on:
+  schedule:
+    # Türkiye saati 19:00 = UTC 16:00
+    # (GitHub UTC kullandığı için 3 saat geri yazıyoruz)
+    - cron: '0 16 * * *'
+  workflow_dispatch: # Bu satır sayesinde "Actions" sekmesinden istediğin an elle de çalıştırabilirsin
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Kodu cek
+        uses: actions/checkout@v3
+
+      - name: Node.js kur
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+
+      - name: Bagimliliklari yukle
+        run: npm install axios
+
+      - name: Kodu calistir
+        env:
+          ONESIGNAL_APP_ID: ${{ secrets.ONESIGNAL_APP_ID }}
+          ONESIGNAL_REST_KEY: ${{ secrets.ONESIGNAL_REST_KEY }}
+        run: node index.js
