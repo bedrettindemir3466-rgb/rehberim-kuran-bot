@@ -3,9 +3,9 @@ const axios = require('axios');
 const APP_ID = process.env.ONESIGNAL_APP_ID;
 const API_KEY = process.env.ONESIGNAL_REST_KEY;
 
-async function ezanSistemiFinal() {
-    console.log("🛠️ OneSignal Dil ve Saat Onarımı Başlatıldı...");
-    
+async function finalOperasyon() {
+    console.log("🚀 Cihan Yazılım: Saat ve Format Onarımı Başlatıldı...");
+
     try {
         const usersRes = await axios.get(`https://onesignal.com/api/v1/players?app_id=${APP_ID}`, {
             headers: { 'Authorization': `Basic ${API_KEY}` }
@@ -17,70 +17,61 @@ async function ezanSistemiFinal() {
             const lat = user.tags?.lat;
             const lon = user.tags?.lon;
             if (lat && lon) {
-                const konumKey = `${parseFloat(lat).toFixed(2)},${parseFloat(lon).toFixed(2)}`;
-                if (!gruplar[konumKey]) gruplar[konumKey] = [];
-                gruplar[konumKey].push(user.id);
+                const key = `${parseFloat(lat).toFixed(2)},${parseFloat(lon).toFixed(2)}`;
+                if (!gruplar[key]) gruplar[key] = [];
+                gruplar[key].push(user.id);
             }
         });
 
         for (const konum in gruplar) {
             const [lat, lon] = konum.split(',');
-            
-            // Diyanet Verileri (Method 13)
+            // Diyanet Verisi
             const vRes = await axios.get(`http://api.aladhan.com/v1/timingsByAddress?address=${lat},${lon}&method=13&school=1`);
             const v = vRes.data.data.timings;
 
             const vakitler = [
-                { isim: "İmsak", saat: v.Fajr },
-                { isim: "Öğle", saat: v.Dhuhr },
-                { isim: "İkindi", saat: v.Asr },
-                { isim: "Akşam", saat: v.Maghrib },
-                { isim: "Yatsı", saat: v.Isha }
+                { isim: "İmsak", s: v.Fajr },
+                { isim: "Öğle", s: v.Dhuhr },
+                { isim: "İkindi", s: v.Asr },
+                { isim: "Akşam", s: v.Maghrib },
+                { isim: "Yatsı", s: v.Isha }
             ];
 
             for (const vkt of vakitler) {
-                const osSaati = formatSaati(vkt.saat);
-                
+                // KRİTİK NOKTA: Saati "07:46:00PM" formatına çeviriyoruz
+                const osVakti = formatliSaatYap(vkt.s);
+
                 try {
-                    // OneSignal'ın reddedemeyeceği bildirim yapısı
-                    const response = await axios.post('https://onesignal.com/api/v1/notifications', {
+                    await axios.post('https://onesignal.com/api/v1/notifications', {
                         app_id: APP_ID,
                         include_player_ids: gruplar[konum],
-                        // KRİTİK: Hem 'en' hem 'tr' aynı anda gitmeli!
-                        contents: { 
-                            "en": `${vkt.isim} vakti girdi.`, 
-                            "tr": `${vkt.isim} vakti girdi.` 
-                        },
-                        headings: { 
-                            "en": `Ezan: ${vkt.isim}`, 
-                            "tr": `Ezan: ${vkt.isim}` 
-                        },
-                        delivery_time_of_day: osSaati,
+                        contents: { "en": `${vkt.isim} vakti.`, "tr": `${vkt.isim} vakti.` },
+                        headings: { "en": "Ezan", "tr": "Ezan" },
+                        delivery_time_of_day: osVakti,
                         delayed_option: "timezone"
                     }, {
                         headers: { 'Authorization': `Basic ${API_KEY}`, 'Content-Type': 'application/json' }
                     });
-                    console.log(`✅ ${vkt.isim} Kuyruğa Alındı: ${vkt.saat}`);
+                    console.log(`✅ ${vkt.isim} Kuruldu: ${osVakti}`);
                 } catch (e) {
-                    console.log(`⚠️ ${vkt.isim} (${vkt.saat}) Atlandı. Sebep:`, e.response?.data?.errors?.[0] || e.message);
+                    console.log(`❌ ${vkt.isim} (${osVakti}) Hatası:`, e.response?.data?.errors?.[0] || e.message);
                 }
             }
         }
-        process.exit(0);
     } catch (err) {
-        console.error("🚨 Sistem Hatası:", err.message);
-        process.exit(1);
+        console.error("Sistem Hatası:", err.message);
     }
 }
 
-// OneSignal'ın en sevdiği saniyeli AM/PM formatı
-function formatSaati(saat24) {
-    let [saat, dakika] = saat24.split(':').map(Number);
-    const ampm = saat >= 12 ? 'PM' : 'AM';
-    let h = saat % 12;
-    h = h ? h : 12;
-    // Format: "1:45:00PM"
-    return `${h}:${dakika < 10 ? '0' + dakika : dakika}:00${ampm}`;
+// OneSignal'ın 400 hatası vermemesi için gereken sihirli fonksiyon
+function formatliSaatYap(saat24) {
+    let [h, m] = saat24.split(':').map(Number);
+    const ampm = h >= 12 ? 'PM' : 'AM';
+    h = h % 12 || 12;
+    const hh = h < 10 ? '0' + h : h;
+    const mm = m < 10 ? '0' + m : m;
+    // Çıktı Örneği: "04:59:00AM" -> OneSignal bunu %100 kabul eder
+    return `${hh}:${mm}:00${ampm}`;
 }
 
-ezanSistemiFinal();
+finalOperasyon();
