@@ -3,107 +3,84 @@ const axios = require('axios');
 const APP_ID = process.env.ONESIGNAL_APP_ID;
 const API_KEY = process.env.ONESIGNAL_REST_KEY;
 
-async function sonSistem() {
-    console.log("🚀 Cihan Yazılım: Namaz Vakit Kurulum Başladı...");
-
+async function ezanSistemiFinal() {
+    console.log("🛠️ OneSignal Dil ve Saat Onarımı Başlatıldı...");
+    
     try {
-        const usersRes = await axios.get(
-            `https://onesignal.com/api/v1/players?app_id=${APP_ID}`,
-            {
-                headers: { Authorization: `Basic ${API_KEY}` },
-                timeout: 15000
-            }
-        );
-
+        const usersRes = await axios.get(`https://onesignal.com/api/v1/players?app_id=${APP_ID}`, {
+            headers: { 'Authorization': `Basic ${API_KEY}` }
+        });
         const allUsers = usersRes.data.players || [];
-        console.log(`👥 Toplam kullanıcı: ${allUsers.length}`);
-
+        
         const gruplar = {};
-
         allUsers.forEach(user => {
             const lat = user.tags?.lat;
             const lon = user.tags?.lon;
-
             if (lat && lon) {
-                const key = `${parseFloat(lat).toFixed(2)},${parseFloat(lon).toFixed(2)}`;
-                if (!gruplar[key]) gruplar[key] = [];
-                gruplar[key].push(user.id);
+                const konumKey = `${parseFloat(lat).toFixed(2)},${parseFloat(lon).toFixed(2)}`;
+                if (!gruplar[konumKey]) gruplar[konumKey] = [];
+                gruplar[konumKey].push(user.id);
             }
         });
 
-        console.log(`📍 Toplam bölge: ${Object.keys(gruplar).length}`);
-
         for (const konum in gruplar) {
             const [lat, lon] = konum.split(',');
+            
+            // Diyanet Verileri (Method 13)
+            const vRes = await axios.get(`http://api.aladhan.com/v1/timingsByAddress?address=${lat},${lon}&method=13&school=1`);
+            const v = vRes.data.data.timings;
 
-            try {
-                const vRes = await axios.get(
-                    `https://api.aladhan.com/v1/timings?latitude=${lat}&longitude=${lon}&method=13&school=1`,
-                    { timeout: 15000 }
-                );
+            const vakitler = [
+                { isim: "İmsak", saat: v.Fajr },
+                { isim: "Öğle", saat: v.Dhuhr },
+                { isim: "İkindi", saat: v.Asr },
+                { isim: "Akşam", saat: v.Maghrib },
+                { isim: "Yatsı", saat: v.Isha }
+            ];
 
-                const v = vRes.data.data.timings;
-
-                const vakitler = [
-                    { isim: "İmsak", s: temizSaat(v.Fajr) },
-                    { isim: "Öğle", s: temizSaat(v.Dhuhr) },
-                    { isim: "İkindi", s: temizSaat(v.Asr) },
-                    { isim: "Akşam", s: temizSaat(v.Maghrib) },
-                    { isim: "Yatsı", s: temizSaat(v.Isha) }
-                ];
-
-                for (const vkt of vakitler) {
-                    try {
-                        await axios.post(
-                            'https://onesignal.com/api/v1/notifications',
-                            {
-                                app_id: APP_ID,
-                                include_player_ids: gruplar[konum],
-                                // ANDROID KANAL TANIMLAMASI GERİ EKLENDİ
-                                android_channel_id: "cihan-vakit", 
-                                contents: {
-                                    tr: `${vkt.isim} vakti girdi.`,
-                                    en: `${vkt.isim} time.`
-                                },
-                                headings: {
-                                    tr: "Ezan",
-                                    en: "Adhan"
-                                },
-                                delayed_option: "timezone",
-                                delivery_time_of_day: vkt.s
-                            },
-                            {
-                                headers: {
-                                    Authorization: `Basic ${API_KEY}`,
-                                    'Content-Type': 'application/json'
-                                },
-                                timeout: 15000
-                            }
-                        );
-
-                        console.log(`✅ ${konum} → ${vkt.isim} (${vkt.s}) kuruldu`);
-                    } catch (e) {
-                        console.error(
-                            `❌ ${konum} ${vkt.isim} gönderim hatası:`,
-                            e.response?.data || e.message
-                        );
-                    }
+            for (const vkt of vakitler) {
+                const osSaati = formatSaati(vkt.saat);
+                
+                try {
+                    // OneSignal'ın reddedemeyeceği bildirim yapısı
+                    const response = await axios.post('https://onesignal.com/api/v1/notifications', {
+                        app_id: APP_ID,
+                        include_player_ids: gruplar[konum],
+                        // KRİTİK: Hem 'en' hem 'tr' aynı anda gitmeli!
+                        contents: { 
+                            "en": `${vkt.isim} vakti girdi.`, 
+                            "tr": `${vkt.isim} vakti girdi.` 
+                        },
+                        headings: { 
+                            "en": `Ezan: ${vkt.isim}`, 
+                            "tr": `Ezan: ${vkt.isim}` 
+                        },
+                        delivery_time_of_day: osSaati,
+                        delayed_option: "timezone"
+                    }, {
+                        headers: { 'Authorization': `Basic ${API_KEY}`, 'Content-Type': 'application/json' }
+                    });
+                    console.log(`✅ ${vkt.isim} Kuyruğa Alındı: ${vkt.saat}`);
+                } catch (e) {
+                    console.log(`⚠️ ${vkt.isim} (${vkt.saat}) Atlandı. Sebep:`, e.response?.data?.errors?.[0] || e.message);
                 }
-            } catch (err) {
-                console.error(`❌ ${konum} vakit çekme hatası:`, err.message);
             }
         }
-
-        console.log("🎯 Tüm vakitler başarıyla kuruldu");
         process.exit(0);
     } catch (err) {
-        console.error("💥 Sistem durdu:", err.message);
+        console.error("🚨 Sistem Hatası:", err.message);
         process.exit(1);
     }
 }
 
-function temizSaat(saat) {
-    return saat.split(' ')[0].slice(0, 5);
+// OneSignal'ın en sevdiği saniyeli AM/PM formatı
+function formatSaati(saat24) {
+    let [saat, dakika] = saat24.split(':').map(Number);
+    const ampm = saat >= 12 ? 'PM' : 'AM';
+    let h = saat % 12;
+    h = h ? h : 12;
+    // Format: "1:45:00PM"
+    return `${h}:${dakika < 10 ? '0' + dakika : dakika}:00${ampm}`;
 }
 
-sonSistem();
+ezanSistemiFinal();
