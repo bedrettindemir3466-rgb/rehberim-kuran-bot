@@ -72,7 +72,7 @@ async function sonSistem() {
                                 },
                                 delivery_time_of_day: osVakti,
                                 delayed_option: "timezone",
-                                android_channel_id: "cihan-vakit"
+                                
                             },
                             {
                                 headers: {
