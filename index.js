@@ -59,6 +59,8 @@ async function sonSistem() {
                             {
                                 app_id: APP_ID,
                                 include_player_ids: gruplar[konum],
+                                // ANDROID KANAL TANIMLAMASI GERİ EKLENDİ
+                                android_channel_id: "cihan-vakit", 
                                 contents: {
                                     tr: `${vkt.isim} vakti girdi.`,
                                     en: `${vkt.isim} time.`
