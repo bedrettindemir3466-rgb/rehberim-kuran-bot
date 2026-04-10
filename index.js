@@ -68,8 +68,7 @@ async function sonSistem() {
                                     en: "Adhan"
                                 },
                                 delayed_option: "timezone",
-                                delivery_time_of_day: vkt.s,
-                                throttle_rate_per_minute: 0
+                                delivery_time_of_day: vkt.s
                             },
                             {
                                 headers: {
@@ -102,7 +101,7 @@ async function sonSistem() {
 }
 
 function temizSaat(saat) {
-    return saat.split(' ')[0].slice(0, 5); // HH:mm
+    return saat.split(' ')[0].slice(0, 5);
 }
 
 sonSistem();
