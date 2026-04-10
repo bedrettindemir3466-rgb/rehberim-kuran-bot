@@ -3,8 +3,8 @@ const axios = require('axios');
 const APP_ID = process.env.ONESIGNAL_APP_ID;
 const API_KEY = process.env.ONESIGNAL_REST_KEY;
 
-async function evrenselVakitKur() {
-    console.log("🌍 Cihan Yazılım: Evrensel Yerel Vakit Motoru Aktif...");
+async function evrenselKurulum() {
+    console.log("🌍 Cihan Yazılım: Küresel Vakit Senkronizasyonu Başladı...");
     
     try {
         const usersRes = await axios.get(`https://onesignal.com/api/v1/players?app_id=${APP_ID}`, {
@@ -12,13 +12,12 @@ async function evrenselVakitKur() {
         });
         const allUsers = usersRes.data.players || [];
         
-        // Konum bazlı gruplama
         const gruplar = {};
         allUsers.forEach(user => {
             const lat = user.tags?.lat;
             const lon = user.tags?.lon;
             if (lat && lon && user.tags?.imsak_vakti !== "false") {
-                const konumKey = `${parseFloat(lat).toFixed(3)},${parseFloat(lon).toFixed(3)}`;
+                const konumKey = `${parseFloat(lat).toFixed(2)},${parseFloat(lon).toFixed(2)}`;
                 if (!gruplar[konumKey]) gruplar[konumKey] = [];
                 gruplar[konumKey].push(user.id);
             }
@@ -26,20 +25,10 @@ async function evrenselVakitKur() {
 
         for (const konum in gruplar) {
             const [lat, lon] = konum.split(',');
-            
-            // DÜNYA STANDARTI AYARI:
-            // Türkiye için method=13, Dünya geneli için otomatik tespit (auto)
-            // iso8601=true parametresi OneSignal'ın en sevdiği tarih formatını verir
-            const vRes = await axios.get(`http://api.aladhan.com/v1/timingsByAddress`, {
-                params: {
-                    address: `${lat},${lon}`,
-                    method: 13, // Türkiye ağırlıklı olduğu için 13 kalsın, ama parametreleri özelleştireceğiz
-                    school: 1,  // Hanefi (Türkiye/Asya için kritik)
-                    adjustment: 1 // Temkin vakti (Diyanet ile tam uyum için +1/2 dakika gerekebilir)
-                }
-            });
-
+            // Diyanet Methodu (13) ve Hanefi (school=1) Türkiye için şart
+            const vRes = await axios.get(`http://api.aladhan.com/v1/timingsByAddress?address=${lat},${lon}&method=13&school=1`);
             const v = vRes.data.data.timings;
+
             const vakitler = [
                 { isim: "İmsak", saat: v.Fajr },
                 { isim: "Öğle", saat: v.Dhuhr },
@@ -49,38 +38,43 @@ async function evrenselVakitKur() {
             ];
 
             for (const vkt of vakitler) {
-                const gonderimZamani = tarihHesapla(vkt.saat);
+                const gonderimZamani = formatliTarih(vkt.saat);
                 
-                await axios.post('https://onesignal.com/api/v1/notifications', {
-                    app_id: APP_ID,
-                    include_player_ids: gruplar[konum],
-                    contents: { "tr": `${vkt.isim} vakti girdi.`, "en": `${vkt.isim} prayer time.` },
-                    headings: { "tr": `Ezan: ${vkt.isim}`, "en": `Adhan: ${vkt.isim}` },
-                    send_after: gonderimZamani,
-                    delayed_option: "timezone"
-                }, {
-                    headers: { 'Authorization': `Basic ${API_KEY}`, 'Content-Type': 'application/json' }
-                });
+                try {
+                    await axios.post('https://onesignal.com/api/v1/notifications', {
+                        app_id: APP_ID,
+                        include_player_ids: gruplar[konum],
+                        contents: { "en": `${vkt.isim} vakti girdi.`, "tr": `${vkt.isim} vakti girdi.` },
+                        headings: { "en": `Ezan: ${vkt.isim}`, "tr": `Ezan: ${vkt.isim}` },
+                        send_after: gonderimZamani,
+                        delayed_option: "timezone" 
+                    }, {
+                        headers: { 'Authorization': `Basic ${API_KEY}`, 'Content-Type': 'application/json' }
+                    });
+                    console.log(`✅ ${vkt.isim} (${vkt.saat}) başarıyla kuruldu.`);
+                } catch (e) {
+                    // Tek bir vakit hata verse bile (mesela vaktin geçmiş olması) diğerlerini kurmaya devam et
+                    console.log(`⚠️ ${vkt.isim} atlandı:`, e.response?.data?.errors?.[0] || e.message);
+                }
             }
-            console.log(`📍 Konum İşlendi: ${konum} - Vakitler senkronize edildi.`);
         }
         process.exit(0);
     } catch (err) {
-        console.error("🚨 Sistem Hatası:", err.message);
+        console.error("🚨 Kritik Hata:", err.message);
         process.exit(1);
     }
 }
 
-function tarihHesapla(vakitSaati) {
-    // Türkiye saatiyle bugün (Sunucu nerede olursa olsun TR saatini baz al)
-    const simdi = new Date(new Date().toLocaleString("en-US", {timeZone: "Europe/Istanbul"}));
-    const [saat, dakika] = vakitSaati.split(':').map(Number);
+function formatliTarih(saatDakika) {
+    const simdiTR = new Date(new Date().toLocaleString("en-US", {timeZone: "Europe/Istanbul"}));
+    const [saat, dakika] = saatDakika.split(':').map(Number);
     
-    let hedef = new Date(simdi);
+    let hedef = new Date(simdiTR);
     hedef.setHours(saat, dakika, 0, 0);
     
-    // Eğer vakit geçtiyse yarına kur (Geçmişe bildirim kurulamaz)
-    if (hedef.getTime() <= (simdi.getTime() + 60000)) { 
+    // OneSignal geçmiş zamana bildirim kuramaz. 
+    // Eğer vakit geçtiyse veya 2 dakika içindeyse yarına kurar.
+    if (hedef.getTime() <= (simdiTR.getTime() + 120000)) { 
         hedef.setDate(hedef.getDate() + 1);
     }
     
@@ -90,7 +84,8 @@ function tarihHesapla(vakitSaati) {
     const s = String(hedef.getHours()).padStart(2, '0');
     const d = String(hedef.getMinutes()).padStart(2, '0');
     
+    // OneSignal'ın en sevdiği saniyeli ve net format
     return `${yil}-${ay}-${gun} ${s}:${d}:00`; 
 }
 
-evrenselVakitKur();
+evrenselKurulum();
