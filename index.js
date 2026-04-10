@@ -3,8 +3,8 @@ const axios = require('axios');
 const APP_ID = process.env.ONESIGNAL_APP_ID;
 const API_KEY = process.env.ONESIGNAL_REST_KEY;
 
-async function evrenselKurulum() {
-    console.log("🌍 Cihan Yazılım: Küresel Vakit Senkronizasyonu Başladı...");
+async function ezanSisteminiBaslat() {
+    console.log("🚀 Cihan Yazılım: %100 Diyanet Uyumu ve Saat Düzeltme Devrede...");
     
     try {
         const usersRes = await axios.get(`https://onesignal.com/api/v1/players?app_id=${APP_ID}`, {
@@ -25,8 +25,16 @@ async function evrenselKurulum() {
 
         for (const konum in gruplar) {
             const [lat, lon] = konum.split(',');
-            // Diyanet Methodu (13) ve Hanefi (school=1) Türkiye için şart
-            const vRes = await axios.get(`http://api.aladhan.com/v1/timingsByAddress?address=${lat},${lon}&method=13&school=1`);
+            
+            // DİYANET AYARLARI: method=13 (Diyanet), school=1 (Hanefi), latitudeAdjustmentMethod=3 (Açı ayarı)
+            const vRes = await axios.get(`http://api.aladhan.com/v1/timingsByAddress`, {
+                params: {
+                    address: `${lat},${lon}`,
+                    method: 13,
+                    school: 1,
+                    latitudeAdjustmentMethod: 3
+                }
+            });
             const v = vRes.data.data.timings;
 
             const vakitler = [
@@ -38,54 +46,41 @@ async function evrenselKurulum() {
             ];
 
             for (const vkt of vakitler) {
-                const gonderimZamani = formatliTarih(vkt.saat);
+                // OneSignal'ın 400 hatası vermemesi için "timezone" moduna özel saat formatı: "9:00AM" veya "9:00PM"
+                const osSaati = oneSignalSaatFormatı(vkt.saat);
                 
                 try {
                     await axios.post('https://onesignal.com/api/v1/notifications', {
                         app_id: APP_ID,
                         include_player_ids: gruplar[konum],
-                        contents: { "en": `${vkt.isim} vakti girdi.`, "tr": `${vkt.isim} vakti girdi.` },
-                        headings: { "en": `Ezan: ${vkt.isim}`, "tr": `Ezan: ${vkt.isim}` },
-                        send_after: gonderimZamani,
-                        delayed_option: "timezone" 
+                        contents: { "tr": `${vkt.isim} vakti girdi.`, "en": `${vkt.isim} prayer time.` },
+                        headings: { "tr": `Ezan: ${vkt.isim}`, "en": `Adhan: ${vkt.isim}` },
+                        // KRİTİK DEĞİŞİKLİK: timezone modunda sadece saat istenir
+                        delivery_time_of_day: osSaati, 
+                        delayed_option: "timezone"
                     }, {
                         headers: { 'Authorization': `Basic ${API_KEY}`, 'Content-Type': 'application/json' }
                     });
-                    console.log(`✅ ${vkt.isim} (${vkt.saat}) başarıyla kuruldu.`);
+                    console.log(`✅ ${vkt.isim} (${vkt.saat}) yerel saate göre ayarlandı.`);
                 } catch (e) {
-                    // Tek bir vakit hata verse bile (mesela vaktin geçmiş olması) diğerlerini kurmaya devam et
-                    console.log(`⚠️ ${vkt.isim} atlandı:`, e.response?.data?.errors?.[0] || e.message);
+                    console.log(`❌ ${vkt.isim} hatası:`, e.response?.data?.errors?.[0] || e.message);
                 }
             }
         }
         process.exit(0);
     } catch (err) {
-        console.error("🚨 Kritik Hata:", err.message);
+        console.error("🚨 Ana Hata:", err.message);
         process.exit(1);
     }
 }
 
-function formatliTarih(saatDakika) {
-    const simdiTR = new Date(new Date().toLocaleString("en-US", {timeZone: "Europe/Istanbul"}));
-    const [saat, dakika] = saatDakika.split(':').map(Number);
-    
-    let hedef = new Date(simdiTR);
-    hedef.setHours(saat, dakika, 0, 0);
-    
-    // OneSignal geçmiş zamana bildirim kuramaz. 
-    // Eğer vakit geçtiyse veya 2 dakika içindeyse yarına kurar.
-    if (hedef.getTime() <= (simdiTR.getTime() + 120000)) { 
-        hedef.setDate(hedef.getDate() + 1);
-    }
-    
-    const yil = hedef.getFullYear();
-    const ay = String(hedef.getMonth() + 1).padStart(2, '0');
-    const gun = String(hedef.getDate()).padStart(2, '0');
-    const s = String(hedef.getHours()).padStart(2, '0');
-    const d = String(hedef.getMinutes()).padStart(2, '0');
-    
-    // OneSignal'ın en sevdiği saniyeli ve net format
-    return `${yil}-${ay}-${gun} ${s}:${d}:00`; 
+// OneSignal'ın "timezone" modu için saati AM/PM formatına çeviren fonksiyon
+function oneSignalSaatFormatı(saat24) {
+    let [saat, dakika] = saat24.split(':').map(Number);
+    const ampm = saat >= 12 ? 'PM' : 'AM';
+    saat = saat % 12;
+    saat = saat ? saat : 12; // 00:00 ise 12 yap
+    return `${saat}:${dakika < 10 ? '0' + dakika : dakika}${ampm}`;
 }
 
-evrenselKurulum();
+ezanSisteminiBaslat();
