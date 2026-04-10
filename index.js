@@ -4,7 +4,7 @@ const APP_ID = process.env.ONESIGNAL_APP_ID;
 const API_KEY = process.env.ONESIGNAL_REST_KEY;
 
 async function vakitleriKur() {
-    console.log("🚀 Cihan Yazılım: Saat Karmaşası Çözüldü...");
+    console.log("🚀 Cihan Yazılım: Diyanet Hassas Ayar Motoru Devrede...");
     
     try {
         const usersRes = await axios.get(`https://onesignal.com/api/v1/players?app_id=${APP_ID}`, {
@@ -25,8 +25,10 @@ async function vakitleriKur() {
 
         for (const konum in gruplar) {
             const [lat, lon] = konum.split(',');
-            // DİYANET METHODU (13) İLE EN DOĞRU VAKİTLERİ ALIYORUZ
-            const vRes = await axios.get(`http://api.aladhan.com/v1/timingsByAddress?address=${lat},${lon}&method=13`);
+            
+            // Diyanet'in kullandığı tam parametreleri buraya giriyoruz
+            // method=13 (Diyanet) + school=1 (Hanafi - İkindi vakti için kritik)
+            const vRes = await axios.get(`http://api.aladhan.com/v1/timingsByAddress?address=${lat},${lon}&method=13&school=1`);
             const v = vRes.data.data.timings;
 
             const vakitler = [
@@ -38,46 +40,37 @@ async function vakitleriKur() {
             ];
 
             for (const vkt of vakitler) {
-                // Türkiye saatinden UTC'ye çevrilmiş tarih
-                const gonderimZamani = utcFormatinaGetir(vkt.saat);
+                const gonderimZamani = tarihOlustur(vkt.saat);
                 
                 await axios.post('https://onesignal.com/api/v1/notifications', {
                     app_id: APP_ID,
                     include_player_ids: gruplar[konum],
                     contents: { "en": `${vkt.isim} vakti girdi.` },
                     headings: { "en": `Ezan: ${vkt.isim}` },
-                    send_after: gonderimZamani // Format: 2026-04-11 18:10:00 GMT+0000
+                    send_after: gonderimZamani,
+                    // Bu seçenek saat karmaşasını telefonda bitirir
+                    delayed_option: "timezone" 
                 }, {
                     headers: { 'Authorization': `Basic ${API_KEY}`, 'Content-Type': 'application/json' }
                 });
-                console.log(`📡 ${vkt.isim} kuruldu: ${vkt.saat} (UTC: ${gonderimZamani})`);
+                console.log(`📡 Kuruldu: ${vkt.isim} - Vakit: ${vkt.saat}`);
             }
         }
         process.exit(0);
     } catch (err) {
-        console.error("Kritik Hata:", err.message);
+        console.error("Hata:", err.message);
         process.exit(1);
     }
 }
 
-function utcFormatinaGetir(vakitSaati) {
+function tarihOlustur(vakitSaati) {
     const simdiTR = new Date(new Date().toLocaleString("en-US", {timeZone: "Europe/Istanbul"}));
-    const [saat, dakika] = vakitSaati.split(':').map(Number);
+    const yil = simdiTR.getFullYear();
+    const ay = String(simdiTR.getMonth() + 1).padStart(2, '0');
+    const gun = String(simdiTR.getDate()).padStart(2, '0');
     
-    let hedef = new Date(simdiTR);
-    hedef.setHours(saat, dakika, 0, 0);
-    
-    // Vakit geçtiyse yarına kur
-    if (hedef <= simdiTR) hedef.setDate(hedef.getDate() + 1);
-    
-    // OneSignal'ın hata yapmaması için UTC'ye zorluyoruz
-    const yil = hedef.getUTCFullYear();
-    const ay = String(hedef.getUTCMonth() + 1).padStart(2, '0');
-    const gun = String(hedef.getUTCDate()).padStart(2, '0');
-    const s = String(hedef.getUTCHours()).padStart(2, '0');
-    const d = String(hedef.getUTCMinutes()).padStart(2, '0');
-    
-    return `${yil}-${ay}-${gun} ${s}:${d}:00 GMT+0000`;
+    // OneSignal'a "Şu yerel saatte gönder" diyoruz
+    return `${yil}-${ay}-${gun} ${vakitSaati}:00`; 
 }
 
 vakitleriKur();
