@@ -4,17 +4,17 @@ const APP_ID = process.env.ONESIGNAL_APP_ID;
 const API_KEY = process.env.ONESIGNAL_REST_KEY;
 
 async function vakitleriKur() {
-    console.log("🚀 Cihan Yazılım: Profesyonel Gruplandırma Motoru Başlatıldı...");
+    console.log("🚀 Cihan Yazılım: Global Gruplandırma Sistemi Yayında...");
     
     try {
-        // 1. ADIM: TÜM KULLANICILARI ÇEK
+        // 1. ADIM: TÜM KULLANICILARI ÇEK (Gelecekteki binlerce kişi için hazır)
         const usersRes = await axios.get(`https://onesignal.com/api/v1/players?app_id=${APP_ID}`, {
             headers: { 'Authorization': `Basic ${API_KEY}` }
         });
         const allUsers = usersRes.data.players || [];
-        console.log(`📡 Toplam ${allUsers.length} kullanıcı analiz ediliyor...`);
+        console.log(`📡 Toplam ${allUsers.length} aktif cihaz analiz ediliyor...`);
 
-        // 2. ADIM: KONUMA GÖRE GRUPLANDIRMA (Akıllı Motor 🧠)
+        // 2. ADIM: AKILLI KONUM GRUPLAMA
         const gruplar = {};
         allUsers.forEach(user => {
             const lat = user.tags?.lat;
@@ -22,22 +22,22 @@ async function vakitleriKur() {
             const ezanAcik = user.tags?.imsak_vakti !== "false";
 
             if (lat && lon && ezanAcik) {
-                const konumKey = `${lat},${lon}`;
+                const konumKey = `${parseFloat(lat).toFixed(2)},${parseFloat(lon).toFixed(2)}`;
                 if (!gruplar[konumKey]) gruplar[konumKey] = [];
                 gruplar[konumKey].push(user.id);
             }
         });
 
         const konumlar = Object.keys(gruplar);
-        console.log(`📍 ${konumlar.length} farklı konum grubu oluşturuldu.`);
+        console.log(`📍 ${konumlar.length} farklı bölge tespit edildi.`);
 
-        // 3. ADIM: HER GRUP İÇİN TEK API İSTEĞİ VE TOPLU BİLDİRİM
+        // 3. ADIM: VAKİT ÇEKME VE TOPLU BİLDİRİM FIRLATMA
         for (const konum of konumlar) {
             const [lat, lon] = konum.split(',');
             const playerIds = gruplar[konum];
 
             try {
-                console.log(`⏳ Konum için vakitler alınıyor: ${konum} (${playerIds.length} kullanıcı)`);
+                console.log(`⏳ Bölge işleniyor: ${konum} (${playerIds.length} kullanıcı)`);
                 const vRes = await axios.get(`http://api.aladhan.com/v1/timingsByAddress?address=${lat},${lon}&method=13`);
                 const v = vRes.data.data.timings;
 
@@ -49,35 +49,35 @@ async function vakitleriKur() {
                     { isim: "Yatsı", saat: v.Isha }
                 ];
 
-                // OneSignal'a bu konumdaki herkes için toplu bildirim gönder
+                // OneSignal Toplu Gönderim
                 await Promise.all(vakitler.map(vkt => 
                     axios.post('https://onesignal.com/api/v1/notifications', {
                         app_id: APP_ID,
-                        include_player_ids: playerIds, // Aynı konumdaki herkese tek paket!
-                        headings: { "tr": `Ezan: ${vkt.isim}` },
-                        contents: { "tr": `${vkt.isim} vakti girdi.` },
+                        include_player_ids: playerIds,
+                        headings: { "en": `Ezan: ${vkt.isim}`, "tr": `Ezan: ${vkt.isim}` },
+                        contents: { "en": `${vkt.isim} vakti girdi.`, "tr": `${vkt.isim} vakti girdi.` },
                         send_after: tarihBelirle(vkt.saat)
                     }, {
                         headers: { 'Authorization': `Basic ${API_KEY}`, 'Content-Type': 'application/json' }
-                    }).catch(e => console.log(`⚠️ Bildirim Hatası (${vkt.isim}):`, e.response?.data || e.message))
+                    }).catch(e => console.log(`⚠️ Bildirim Detay Hatası (${vkt.isim}):`, e.response?.data || e.message))
                 ));
-                console.log(`✅ Grup tamamlandı: ${konum}`);
+                console.log(`✅ Bölge tamamlandı: ${konum}`);
             } catch (err) {
-                console.error(`❌ Konum Hatası (${konum}):`, err.message);
+                console.error(`❌ API Hatası (${konum}):`, err.message);
             }
         }
 
-        console.log("🏁 Tüm grupların işlemleri bitti.");
+        console.log("--------------------------------------------------");
+        console.log("🏁 Cihan, işlem bitti! Tüm vakitler kuruldu.");
         process.exit(0);
 
     } catch (err) {
-        console.error("🚨 KRİTİK SİSTEM HATASI:", err.message);
+        console.error("🚨 SİSTEM DURDURULDU:", err.message);
         process.exit(1);
     }
 }
 
 function tarihBelirle(vakitSaati) {
-    // Türkiye saatini baz alıyoruz
     const simdi = new Date(new Date().toLocaleString("en-US", {timeZone: "Europe/Istanbul"}));
     const [saat, dakika] = vakitSaati.split(':').map(Number);
     let hedef = new Date(simdi);
