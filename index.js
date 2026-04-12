@@ -42,8 +42,8 @@ async function vakitleriKur() {
                 
                 // PARANTEZ HATASI DÜZELTİLDİ:
                 const vRes = await axios.get(
-                    `https://api.aladhan.com/v1/timings?latitude=${lat}&longitude=${lon}&method=13&school=1&latitudeAdjustmentMethod=3`
-                );
+    `https://api.aladhan.com/v1/timings?latitude=${lat}&longitude=${lon}&method=13&school=0&latitudeAdjustmentMethod=3`
+);
                 
                 const v = vRes.data.data.timings;
 
